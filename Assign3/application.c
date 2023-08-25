@@ -20,34 +20,34 @@ int main() {
     while(ntoken = yylex()) {
         switch(ntoken) {
             case KEYWORD: 
-                printf("<KEYWORD, %d, %s>\n", token, yytext); 
+                printf("<KEYWORD, %d, %s>\n", ntoken, yytext); 
                 break;
             case IDENTIFIER: 
-                printf("<IDENTIFIER, %d, %s>\n", token, yytext); 
+                printf("<IDENTIFIER, %d, %s>\n", ntoken, yytext); 
                 break;
             case CONSTANT_INT: 
-                printf("<CONSTANT_INT, %d, %s>\n", token, yytext); 
+                printf("<CONSTANT_INT, %d, %s>\n", ntoken, yytext); 
                 break;
             case CONSTANT_FLOAT: 
-                printf("<CONSTANT_FLOAT, %d, %s>\n", token, yytext); 
+                printf("<CONSTANT_FLOAT, %d, %s>\n", ntoken, yytext); 
                 break;
             case CONSTANT_CHAR: 
-                printf("<CONSTANT_CHAR, %d, %s>\n", token, yytext); 
+                printf("<CONSTANT_CHAR, %d, %s>\n", ntoken, yytext); 
                 break;
             case LITERAL: 
-                printf("<LITERAL, %d, %s>\n", token, yytext); 
+                printf("<LITERAL, %d, %s>\n", ntoken, yytext); 
                 break;
             case PUNCTUATOR: 
-                printf("<PUNCTUATOR, %d, %s>\n", token, yytext); 
+                printf("<PUNCTUATOR, %d, %s>\n", ntoken, yytext); 
                 break;
             case ML_COMM_END: 
-                printf("<MULTI_LINE_COMMENT, %d>\n", token);  
+                printf("<MULTI_LINE_COMMENT, %d>\n", ntoken);  
                 break;
             case SL_COMM_END: 
-                printf("<SINGLE_LINE_COMMENT, %d>\n", token); 
+                printf("<SINGLE_LINE_COMMENT, %d>\n", ntoken); 
                 break;
             default:
-                printf("<INVALID_TOKEN, %d, %s>\n", token, yytext);
+                printf("<INVALID_TOKEN, %d, %s>\n", ntoken, yytext);
                 break;
         }
     }
