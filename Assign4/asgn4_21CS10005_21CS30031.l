@@ -1,18 +1,18 @@
 /* Declarations */
 %{
     #include "y.tab.h"
+
 %}
 
 /* For bison to get line number */
 %option yylineno
-
 /* States */
 %x SINGLE_LINE_COMM
 %x MULTI_LINE_COMM
 
 /* Regular Expressions */
 ID_NONDIGIT     [a-zA-Z_]
-DIGIT           [0-9]
+DIGIT           [0-9]   
 IDENTIFIER      {ID_NONDIGIT}({ID_NONDIGIT}|{DIGIT})*
 
 DIG_NONZERO     [1-9]
@@ -31,10 +31,12 @@ CONSTANT        {CONSTANT_INT}|{CONSTANT_FLOAT}|{CONSTANT_ENUM}|{CONSTANT_CHAR}
 
 S_CHAR          [^"\\\n]|{ESCAPE_SEQ}
 S_CHAR_SEQ      {S_CHAR}+
-LITERAL         \"{S_CHAR_SEQ}?\"
+LITERAL         \"({S_CHAR_SEQ}?)\"
 
 /* Whitespace recognition */
-WHITE_SPACE     [ \t\n]
+WHITE_SPACE     [  \t]
+NEWLINE        \n
+
 
 /* Definitions */
 /* Keywords, Identifiers, Constants, Literals, Punctuators */
@@ -77,22 +79,23 @@ WHITE_SPACE     [ \t\n]
 "register"                  {return REGISTER;}
 "union"                     {return UNION;}
 
-{IDENTIFIER}                {return IDENTIFIER;}
-{CONSTANT_INT}              {return CONSTANT_INT;}
-{CONSTANT_FLOAT}            {return CONSTANT_FLOAT;}
-{CONSTANT_CHAR}             {return CONSTANT_CHAR;}
-{LITERAL}                   {return LITERAL;}
+{IDENTIFIER}                {yylval.sValue = strdup(yytext); return IDENTIFIER;}
+{CONSTANT_INT}              {yylval.iValue = atoi(yytext) ;return CONSTANT_INT;}
+{CONSTANT_FLOAT}            {yylval.fValue = atof(yytext); return CONSTANT_FLOAT;}
+{CONSTANT_CHAR}             {yylval.cValue = *strdup(yytext) ;return CONSTANT_CHAR;}
+{LITERAL}                   {yylval.sValue = strdup(yytext) ;return LITERAL;}
 {WHITE_SPACE}               {}
+{NEWLINE}                   {printf("\n----------- Parsing Line Number %d -----------\n", yylineno);}
 
 "//"                        {BEGIN(SINGLE_LINE_COMM);}
 <SINGLE_LINE_COMM>.         {}
-<SINGLE_LINE_COMM>\n        {BEGIN(INITIAL);}
+<SINGLE_LINE_COMM>\n        {BEGIN(INITIAL); printf("\n----------- Parsing Line Number %d -----------\n\n\n", yylineno);}
 <SINGLE_LINE_COMM><<EOF>>   {BEGIN(INITIAL);}
 
 "/*"                        {BEGIN(MULTI_LINE_COMM);}
 <MULTI_LINE_COMM>"*/"       {BEGIN(INITIAL);}
 <MULTI_LINE_COMM>.          {}
-<MULTI_LINE_COMM>\n         {}
+<MULTI_LINE_COMM>\n         {printf("\n----------- Parsing Line Number %d -----------\n\n\n", yylineno);}
 
 "("                         {return PARANTHESIS_OPEN;}
 ")"                         {return PARANTHESIS_CLOSE;}
@@ -134,12 +137,12 @@ WHITE_SPACE     [ \t\n]
 "/="                        {return DIVIDE_ASSIGN;}
 "%="                        {return MOD_ASSIGN;}
 "+="                        {return ADD_ASSIGN;}
-"-="                        {return SUBTRACT_ASSIGN;}
+"-="                        {return MINUS_ASSIGN;}
 "<<="                       {return LEFT_SHIFT_ASSIGN;}
 ">>="                       {return RIGHT_SHIFT_ASSIGN;}
 "&="                        {return AND_ASSIGN;}
 "^="                        {return XOR_ASSIGN;}
 "|="                        {return OR_ASSIGN;}
 "#"                         {return HASH;}
+.                           { printf("ERROR [Line %d] : Invalid token %s\n", yylineno, yytext); return INVALID_TOKEN; }
 %%
-
