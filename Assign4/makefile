@@ -4,7 +4,7 @@ run : parser asgn4_21CS10005_21CS30031_test.c
 parser : lex.yy.o y.tab.o asgn4_21CS10005_21CS30031_main.o
 	gcc lex.yy.o y.tab.o asgn4_21CS10005_21CS30031_main.o -lfl -o parser
 
-asgn4_21CS10005_21CS30031_main.o : _asgn4_21CS10005_21CS30031_main.c y.tab.h
+asgn4_21CS10005_21CS30031_main.o : asgn4_21CS10005_21CS30031_main.c y.tab.h
 	gcc -c asgn4_21CS10005_21CS30031_main.c
 
 lex.yy.o : lex.yy.c
