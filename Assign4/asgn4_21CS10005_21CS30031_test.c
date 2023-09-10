@@ -3,18 +3,26 @@
  *  // Mihir Mallick - 21CS30031
  */
 
-#define MY_CUSTOM_MACRO1(ptr, p2, v3, ...) do { \
+//Uncomment the following commented portions to test the preprocessor
+
+/*#define MY_CUSTOM_MACRO1(ptr, p2, v3, ...) do { \
     auto int custom_var1; \
     register int custom_var2; \
     extern int custom_var3; \
     static int custom_var4 = 42; \
-} while(0)
+} while(0)*/
 
-#define MY_CUSTOM_MACRO2(arr_b, arr_c, arr_d, arr_e) "My custom macro"
+//#define MY_CUSTOM_MACRO2(arr_b, arr_c, arr_d, arr_e) "My custom macro"
 
 enum custom_enum_type1;
 enum custom_enum_type2 { CUSTOM_ENUM_TAG1, CUSTOM_ENUM_TAG2 };
 enum { CUSTOM_ENUM_TAG3 = -1, CUSTOM_ENUM_TAG4 } custom_enum_type3;
+    inline void my_custom_function(int a, int b) {
+        auto int custom_var1;
+        register int custom_var2;
+        extern int custom_var3;
+        static int custom_var4 = 42;
+    }
 
 int main() {
     int my_array1[6] = { 1, 2, [2]=7 };
@@ -22,7 +30,6 @@ int main() {
     char char_var1 = 'A';
     char *char_ptr_var = &char_var1;
     *char_ptr_var = 'B';
-    char **str_array = (char**) { "Alpha", my_array2, "Beta" };
 
     unsigned long ul_var1 = +1234567890;
     short short_var = ~255;
@@ -37,7 +44,7 @@ int main() {
     ul_var1 = sizeof ul_var1;
 
     ul_var1 *= ul_var1, ul_var1 /= ul_var1, ul_var1 %= ul_var1;
-    ul_var1 += (ul_var1 -= ul_var1);
+    //ul_var1 += (ul_var1 -= ul_var1);
     ul_var1 <<= (ul_var1 >>= ul_var1);
     ul_var1 &= ul_var1 |= ul_var1 ^= ul_var1;
 
@@ -85,12 +92,7 @@ int main() {
     my_struct_type1.my_member = 5;
     my_struct_type2->my_member = 6;
 
-    inline void my_custom_function(int x, int y) {
-        // Function declaration with "inline" in the later part of the code
-        int z = x + y;
-        printf("my_custom_function result: %d\n", z);
-    }
-
+    // inline void foo2(int a, int b) {}
     my_custom_function(10, 20);
 
     return 0;
