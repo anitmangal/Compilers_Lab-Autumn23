@@ -1,5 +1,5 @@
 run : parser asgn4_21CS10005_21CS30031_test.c
-	./parser < asgn4_21CS10005_21CS30031_test.c > output.txt
+	./parser < asgn4_21CS10005_21CS30031_test.c > asgn4_21CS10005_21CS30031_output.txt
 
 parser : lex.yy.o y.tab.o asgn4_21CS10005_21CS30031_main.o
 	gcc lex.yy.o y.tab.o asgn4_21CS10005_21CS30031_main.o -lfl -o parser
