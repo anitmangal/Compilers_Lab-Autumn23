@@ -13,10 +13,10 @@ using namespace std;
 #define sizeof_pointer 4
 
 /* Forward declarations. */
-class symbol;   // Symbol Table Record
-class symbolType;   // Type of a symbol
+struct symbol;   // Symbol Table Record
+struct symbolType;   // Type of a symbol
 class symbolTable;  // Symbol Table
-class quad; // Quad to store TAC
+struct quad; // Quad to store TAC
 class quadArray;    // List of Quads
 
 /* Global Variables */
@@ -31,8 +31,7 @@ extern string blockName;   // Name of current block
 extern int yyparse();
 extern char* yytext;
 
-class symbol {
-    public:
+struct symbol {
     string name;    // Name of symbol
     symbolType* type;   // Type of symbol
     string initValue;   // Initial value of symbol
@@ -44,8 +43,8 @@ class symbol {
     symbol* update(symbolType* t);  // Update type of symbol to t
 };
 
-class symbolType {
-    public:
+
+struct symbolType {
     string base;   // Base type of symbol
     int width; // Width of symbol, 1 by default. Size for arrays
     symbolType* arrType;   // Array type of symbol
@@ -63,13 +62,12 @@ class symbolTable {
     symbolTable(string name_);  // Constructor
 
     symbol* lookup(string name);    // Lookup for symbol in symbol table
-    static symbol* gentemp(symbolType* type_, string initValue_ = "(empty)"); // Generate temporary symbol
+    static symbol* gentemp(symbolType* type_, string initValue_ = "NULL"); // Generate temporary symbol
     void update();  // Update offset of symbols in symbol table
     void print();   // Print symbol table
 };
 
-class quad {
-    public:
+struct quad {
     string opcode; // Opcode of quad
     string argument1;  // First argument of quad
     string argument2;  // Second argument of quad
@@ -94,25 +92,22 @@ class quadArray{
     void print();  // Print quad array
 };
 
-// Array class for arrays and pointers
-class A {
-    public:
-    int arrType; // Type of array. 0:array, 1:pointer
+// Array struct for arrays and pointers
+struct A {
+    bool arrType; // Type of array. 0:array, 1:pointer
     symbol* addr;   // Base symbol of array in Symbol Table
     symbol* location; // To get address of array
     symbolType* type;   // Type of array stored in symbol table
 };
 
-// Statement class for statements
-class S {
-    public:
+// Statement struct for statements
+struct S {
     list <int> nextList;    // List of nexts
 };
 
-// Expression class for expressions
-class E {
-    public:
-    string type;    // Type of expression
+// Expression struct for expressions
+struct E {
+    bool exprType;    // Type of expression. 0:bool, 1:not bool
     symbol* addr; // Base symbol of expression in Symbol Table
     list <int> trueList;    // List of statements for true
     list <int> falseList;   // List of statements for false
@@ -124,5 +119,16 @@ list <int> makelist(int i); // Make a new list with i as the only element, index
 list <int> merge(list <int> &p1, list <int> &p2); // Merge two lists, return merged list
 void backpatch(list <int> &p, int i); // Backpatch list p with i, update quad array
 bool typecheck(symbolType* t1, symbolType* t2); // Check if types t1 and t2 are compatible (called by typecheck(symbol, symbol) to check types of symbols and compatible types)
-symbol* convType(symbol* s, string t); // Convert type of symbol s to t, which calls 
+symbol* convType(symbol* s, string t); // Convert type of symbol s to t, which calls
+
+/* HELPER FUNCTIONS */
+bool typecheck(symbol* s1, symbol* s2); // Check if types of symbols s1 and s2 are compatible
+string convIntToStr(int n); // Convert int to string
+string convFloatToStr(float f); // Convert float to string
+E* convIntToBool(E* e); // Convert int to bool
+E* convBoolToInt(E* e); // Convert bool to int
+void switchTable(symbolTable* newTable); // Switch to new symbol table
+int nextinstr(); // Return index of next quad
+int sizeOfType(symbolType* t); // Return size of type t
+string printType(symbolType* t); // Return string representation of type t
 #endif

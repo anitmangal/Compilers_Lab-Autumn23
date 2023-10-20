@@ -12,11 +12,11 @@
 %union {
     int iValue;     // Integer value
     char *sValue;   // String value
-    expression* expr;   // Expression
-    statement* statem;  // Statement
     symbol* symb;       // Symbol
     symbolType* symbType;   // Symbol type
-    Array* arr; // Array
+    E* expr;   // Expression
+    S* statem;  // Statement
+    A* arr; // Array
     int instr_ind;  // Keep track of instruction number
     char unary_op;  // Unary operator
     int param_count;   // Parameter count for functions
@@ -42,11 +42,12 @@
 
 %right THEN ELSE    // Checks if Else can be matched with If
 
+/* Types for all non-terminals */
 %type <unary_op> unary_operator // Unary operator non-terminals
 %type <param_count> argument_expression_list argument_expression_list_opt   // Number of parameters non-terminals
-%type <expr> expression primary_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression expression_statement   // Expression type non-terminals
+%type <expr> expression expression_opt primary_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression expression_statement   // Expression type non-terminals
 %type <statem> statement labeled_statement compound_statement selection_statement iteration_statement jump_statement loop_statement block_item block_item_list block_item_list_opt  // Statement type non-terminals
-%type <symbType> pointer    // Pointer non-terminal
+%type <symbType> pointer pointer_opt   // Pointer non-terminal
 %type <symb> constant initializer direct_declarator init_declarator declarator  // Symbol non-terminals
 %type <arr> postfix_expression unary_expression cast_expression // Array non-terminals
 %type <instr_ind> M // Augmented non-terminal to help with backpatching by storing next instruction index
@@ -56,7 +57,7 @@
 
 
 constant            : CONSTANT_INT  {
-                        $$ = symbTable::gentemp(new symbType("int"), conIntToStr($1)); // Create new temp with type int and store value
+                        $$ = symbTable::gentemp(new symbType("int"), convIntToStr($1)); // Create new temp with type int and store value
                         emit("=", $$->name, $1);
                     }
                     | CONSTANT_FLOAT{
@@ -70,408 +71,862 @@ constant            : CONSTANT_INT  {
                     ;
 
 primary_expression  : IDENTIFIER    {
-                        $$ = new expression();  // New expression
-                        $$->location = $1;      // Store pointer in Symbol Table
-                        $$->type = "non_bool";
+                        $$ = new E();  // New expression
+                        $$->addr = $1;      // Store pointer in Symbol Table
+                        $$->exprType = 1;   // Non bool expression
                     }
                     | constant      {
-                        $$ = new expression();  // New expression
-                        $$->location = $1;      // Store pointer in Symbol Table
+                        $$ = new E();  // New expression
+                        $$->addr = $1;      // Store pointer in Symbol Table
                     }
                     | LITERAL       {
-                        $$ = new expression();  // New expression
-                        $$->location = symbTable::gentemp(new symbType("ptr"), $1); // Create new temp with type ptr and store value
+                        $$ = new E();  // New expression
+                        $$->addr = symbTable::gentemp(new symbType("ptr"), $1); // Create new temp with type ptr and store value
                     }
                     | PARANTHESIS_OPEN expression PARANTHESIS_CLOSE { $$ = $2 } // Assignment
                     ;
 
 postfix_expression  : primary_expression {
-                        $$ = new Array();   // New Array
-                        $$->Array = $1->location;   // Store pointer in Symbol Table
-                        $$->type = $1->location->type;  // Update type
-                        $$->location = $$->Array;   // Update location
+                        $$ = new A();   // New Array
+                        $$->addr = $1->addr;   // Store pointer in Symbol Table
+                        $$->type = $1->addr->type;  // Update type
+                        $$->location = $$->addr;   // Update location
                     }
                     | postfix_expression SQ_BRACKET_OPEN expression SQ_BRACKET_CLOSE {
-                        $$ = new Array();   // New Array
+                        $$ = new A();   // New Array
                         $$->type = $1->type->arrType;   // Update type
-                        $$->Array = $1->Array;  // Copy the incoming type
-                        $$->location = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in location
-                        $$->atype = "arr"; // atype is arr
+                        $$->addr = $1->addr;  // Copy the incoming symbol
+                        $$->location = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in location which will have the address of the array element
+                        $$->arrType = 0; // A type is array
 
-                        if ($1->atype == "arr") { // Array of array
+                        if ($1->arrType == 0) { // Array of array
                             symbol* temp = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in temp
-                            int sz = SizeOfType($$->type);  // Get size of type of current
-                            emit("*", temp->name, $3->location->name, conIntToStr(sz)); // temp = \$ 3 * sz
-                            emit("+", $$->location->name, $1->location->name, temp->name); // \$ \$ ->location = \$ 1->location + temp
+                            int sz = sizeOfType($$->type);  // Get size of type of current
+                            emit("*", temp->name, $3->addr->name, convIntToStr(sz)); // temp = \$ 3 * sz
+                            emit("+", $$->addr->name, $1->addr->name, temp->name); // \$ \$ ->location = \$ 1->location + temp
                         }
                         else {
-                            int sz = SizeOfType($$->type);  // Get size of type of current
-                            emit("*", $$->location->name, $3->location->name, conIntToStr(sz)); // \$ \$ ->location = \$ 3->location * sz
+                            int sz = sizeOfType($$->type);  // Get size of type of current
+                            emit("*", $$->addr->name, $3->addr->name, convIntToStr(sz)); // \$ \$ ->addr = \$ 3->addr * sz
                         }
                     }
                     | postfix_expression PARANTHESIS_OPEN argument_expression_list_opt PARANTHESIS_CLOSE {
-                        $$ = new Array();   // Make new array
-                        $$->Array = symbTable::gentemp($1->type); // Get return type
-                        emit("call", $$->Array->name, $1->Array->name, conIntToStr($3->param_count)); // call \$ \$->Array->name \$ 3->param_count
+                        $$ = new A();   // Make new array
+                        $$->addr = symbTable::gentemp($1->type); // Get return type
+                        emit("call", $$->addr->name, $1->addr->name, convIntToStr($3->param_count)); // call \$ \$->Array->name \$ 3->param_count
                     }
                     | postfix_expression PERIOD IDENTIFIER {}
                     | postfix_expression ARROW IDENTIFIER {}
                     | postfix_expression INCREMENT {
-                        $$ = new Array();   // Make new array
-                        $$->Array = symbTable::gentemp($1->Array->type);    // Make new temp with type of current
-                        emit("=", $$->Array->name, $1->Array->name);    // \$ \$->Array->name = \$ 1->Array->name
-                        emit("+", $1->Array->name, $1->Array->name, "1");   // \$ 1->Array->name = \$ 1->Array->name + 1
+                        $$ = new A();   // Make new array
+                        $$->addr = symbTable::gentemp($1->addr->type);    // Make new temp with type of current
+                        emit("=", $$->addr->name, $1->addr->name);    // \$ \$->Array->name = \$ 1->Array->name
+                        emit("+", $1->addr->name, $1->addr->name, "1");   // \$ 1->Array->name = \$ 1->Array->name + 1
                     }
                     | postfix_expression DECREMENT {
-                        $$ = new Array();   // Make new array
-                        $$->Array = symbTable::gentemp($1->Array->type);    // Make new temp with type of current
-                        emit("=", $$->Array->name, $1->Array->name);    // \$ \$->Array->name = \$ 1->Array->name
-                        emit("-", $1->Array->name, $1->Array->name, "1");   // \$ 1->Array->name = \$ 1->Array->name - 1
+                        $$ = new A();   // Make new array
+                        $$->addr = symbTable::gentemp($1->addr->type);    // Make new temp with type of current
+                        emit("=", $$->addr->name, $1->addr->name);    // \$ \$->Array->name = \$ 1->Array->name
+                        emit("-", $1->addr->name, $1->addr->name, "1");   // \$ 1->Array->name = \$ 1->Array->name - 1
                     }
                     | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE CURLY_BRACKET_OPEN initializer_list CURLY_BRACKET_CLOSE {}
                     | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE CURLY_BRACKET_OPEN initializer_list COMMA CURLY_BRACKET_CLOSE {}
                     ;
 
-argument_expression_list_opt : argument_expression_list {printf("argument_expression_list_opt: argument_expression_list\n");}
-                            | {printf("argument_expression_list_opt: (empty)\n");}
+argument_expression_list_opt : argument_expression_list {$$ = $1;} // Copy the number of parameters
+                            |%empty {$$ = 0;}   // No parameters
                             ;
 
-argument_expression_list    : assignment_expression {printf("argument_expression_list: assignment_expression\n");}
-                            | argument_expression_list COMMA assignment_expression {printf("argument_expression_list: argument_expression_list , assignment_expression\n");}
+argument_expression_list    : assignment_expression {
+                                $$ = 1;
+                                emit("param", $1->addr->name);  // Emit param
+                            }
+                            | argument_expression_list COMMA assignment_expression {
+                                $$ = $1 + 1;
+                                emit("param", $3->addr->name);  // Emit param
+                            }
                             ;
 
-unary_expression    : postfix_expression {printf("unary_expression: postfix_expression\n");}
-                    | INCREMENT unary_expression {printf("unary_expression: ++ unary_expression\n");}
-                    | DECREMENT unary_expression {printf("unary_expression: -- unary_expression\n");}
-                    | unary_operator cast_expression {printf("unary_expression: unary_operator cast_expression\n");}
-                    | SIZEOF unary_expression {printf("unary_expression: sizeof unary_expression\n");}
-                    | SIZEOF PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE {printf("unary_expression: sizeof ( type_name )\n");}
+unary_expression    : postfix_expression { $$ = $1; } // Pass the expression
+                    | INCREMENT unary_expression {
+                        emit("+", $2->addr->name, $2->addr->name, "1");   // \$ 2->Array->name = \$ 2->Array->name + 1
+                        $$ = $2;
+                    }
+                    | DECREMENT unary_expression {
+                        emit("-", $2->addr->name, $2->addr->name, "1");   // \$ 2->Array->name = \$ 2->Array->name - 1
+                        $$ = $2;
+                    }
+                    | unary_operator cast_expression {
+                        $$ = new A();
+                        if ($1 == '&') {
+                            $$->addr = symbTable::gentemp(new symbType("ptr")); // Create new temp with type ptr and store in addr
+                            $$->addr->type->arrType = $2->addr->type;
+                            emit("= &", $$->addr->name, $2->addr->name); // \$ \$->Array->name = & \$ 2->Array->name
+                        }
+                        else if ($1 == '*') {
+                            $$->arrType = 1; // Pointer type
+                            $$->location = symbTable::gentemp($2->addr->type->arrType); // Create new temp with type of current and store in location
+                            $$->addr = $2->addr;    // Copy the incoming symbol
+                            emit("= *", $$->location->name, $2->addr->name); // \$ \$->location->name = * \$ 2->Array->name
+                        }
+                        else if ($1 == '+') $$ = $2;
+                        else if ($1 == '-' || $1 == '~' || $1 == '!') {
+                            $$->addr = symbTable::gentemp($2->addr->type->base); // Create new temp with type of current and store in addr
+                            emit("= "+$1, $$->addr->name, $2->addr->name); // \$ \$->Array->name = - \$ 2->Array->name
+                        }
+                    }
+                    | SIZEOF unary_expression {}
+                    | SIZEOF PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE {}
                     ;
 
-unary_operator      : AMPERSAND {printf("unary_operator: &\n");}
-                    | ASTERISK  {printf("unary_operator: *\n");}
-                    | PLUS      {printf("unary_operator: +\n");}
-                    | MINUS     {printf("unary_operator: -\n");}
-                    | TILDE     {printf("unary_operator: ~\n");}
-                    | EXCLAMATION {printf("unary_operator: !\n");}
+unary_operator      : AMPERSAND {$$ = '&';}
+                    | ASTERISK  {$$ = '*';}
+                    | PLUS      {$$ = '+';}
+                    | MINUS     {$$ = '-';}
+                    | TILDE     {$$ = '~';}
+                    | EXCLAMATION {$$ = '!';}
                     ;
 
-cast_expression     : unary_expression {printf("cast_expression: unary_expression\n");} 
-                    | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE cast_expression {printf("cast_expression: ( type_name ) cast_expression\n");}
+cast_expression     : unary_expression {$$ =  $1;} 
+                    | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE cast_expression {
+                        $$ = new A();
+                        $$->addr = convType($4->addr, data_type);
+                    }
                     ;
 
-multiplicative_expression : cast_expression {printf("multiplicative_expression: cast_expression\n");}
-                          | multiplicative_expression ASTERISK cast_expression {printf("multiplicative_expression: multiplicative_expression * cast_expression\n");}
-                          | multiplicative_expression SLASH cast_expression {printf("multiplicative_expression: multiplicative_expression / cast_expression\n");}
-                          | multiplicative_expression PERCENT cast_expression {printf("multiplicative_expression: multiplicative_expression %% cast_expression\n");}
+multiplicative_expression : cast_expression {
+                            $$ = new E(); // new expression
+                            if ($1->arrType == 0) {
+                                $$->addr = symbTable::gentemp($1->addr->type); // Create new temp with type of current and store in addr
+                                emit("=[]", $$->addr->name, $1->addr->name, $1->location->name); // \$ \$->Array->name = \$ 1->Array->name [ \$ 1->location->name ]
+                            }
+                            else if($1->arrType == 1) {
+                                $$->addr = $1->location; // Copy the incoming symbol
+                            }
+                            else $$->loc = $1->addr; // Copy the incoming symbol
+                          }
+                          | multiplicative_expression ASTERISK cast_expression {
+                            if (typecheck($1->addr, $3->addr)) {
+                                $$ = new E();
+                                $$->addr = symbTable::gentemp(new symbType($1->addr->type->base)); // Create new temp with type int and store in addr
+                                emit("*", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name * \$ 3->Array->name
+                            }
+                            else {
+                                yyerror("Type mismatch");
+                            }
+                          }
+                          | multiplicative_expression SLASH cast_expression {
+                            if (typecheck($1->addr, $3->addr)) {
+                                $$ = new E();
+                                $$->addr = symbTable::gentemp(new symbType($1->addr->type->base)); // Create new temp with type int and store in addr
+                                emit("/", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name / \$ 3->Array->name
+                            }
+                            else {
+                                yyerror("Type mismatch");
+                            }
+                          }
+                          | multiplicative_expression PERCENT cast_expression {
+                            if (typecheck($1->addr, $3->addr)) {
+                                $$ = new E();
+                                $$->addr = symbTable::gentemp(new symbType($1->addr->type->base)); // Create new temp with type int and store in addr
+                                emit("%", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name % \$ 3->Array->name
+                            }
+                            else {
+                                yyerror("Type mismatch");
+                            }
+                          }
                           ;
 
-additive_expression : multiplicative_expression {printf("additive_expression: multiplicative_expression\n");}
-                    | additive_expression PLUS multiplicative_expression {printf("additive_expression: additive_expression + multiplicative_expression\n");}
-                    | additive_expression MINUS multiplicative_expression {printf("additive_expression: additive_expression - multiplicative_expression\n");}
+additive_expression : multiplicative_expression { $$ = $1; } // Pass 
+                    | additive_expression PLUS multiplicative_expression {
+                        if (typecheck($1->addr, $3->addr)) {
+                            $$ = new E();
+                            $$->addr = symbTable::gentemp(new symbType($1->addr->type->base)); // Create new temp with type int and store in addr
+                            emit("+", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name + \$ 3->Array->name
+                        }
+                        else {
+                            yyerror("Type mismatch");
+                        }
+                    }
+                    | additive_expression MINUS multiplicative_expression {
+                        if (typecheck($1->addr, $3->addr)) {
+                            $$ = new E();
+                            $$->addr = symbTable::gentemp(new symbType($1->addr->type->base)); // Create new temp with type int and store in addr
+                            emit("-", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name - \$ 3->Array->name
+                        }
+                        else {
+                            yyerror("Type mismatch");
+                        }
+                    }
                     ;
 
-shift_expression    : additive_expression {printf("shift_expression: additive_expression\n");}
-                    | shift_expression LEFT_SHIFT additive_expression {printf("shift_expression: shift_expression << additive_expression\n");}
-                    | shift_expression RIGHT_SHIFT additive_expression {printf("shift_expression: shift_expression >> additive_expression\n");}
+shift_expression    : additive_expression {$$ = $1;} // Pass
+                    | shift_expression LEFT_SHIFT additive_expression {
+                        if ($3->addr->type->base == "int") {
+                            $$ = new E();
+                            $$->addr = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in addr
+                            emit("<<", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name << \$ 3->Array->name
+                        }
+                        else {
+                            yyerror("Type mismatch");
+                        }
+                    }
+                    | shift_expression RIGHT_SHIFT additive_expression {
+                        if ($3->addr->type->base == "int") {
+                            $$ = new E();
+                            $$->addr = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in addr
+                            emit(">>", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name >> \$ 3->Array->name
+                        }
+                        else {
+                            yyerror("Type mismatch");
+                        }
+                    }
                     ;
 
-relational_expression   : shift_expression {printf("relational_expression: shift_expression\n");}
-                        | relational_expression LESS_THAN shift_expression {printf("relational_expression: relational_expression < shift_expression\n");}
-                        | relational_expression GREATER_THAN shift_expression {printf("relational_expression: relational_expression > shift_expression\n");}
-                        | relational_expression LESS_THAN_EQUAL shift_expression {printf("relational_expression: relational_expression <= shift_expression\n");}
-                        | relational_expression GREATER_THAN_EQUAL shift_expression {printf("relational_expression: relational_expression >= shift_expression\n");}
+relational_expression   : shift_expression { $$ = $1; }
+                        | relational_expression LESS_THAN shift_expression {
+                            if (typecheck($1->addr, $3->addr)) {
+                                $$ = new E();
+                                $$->exprType = 0;   // Boolean type
+                                $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                                emit("<", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name < \$ 3->Array->name
+                                $$->falseList = makelist(nextinstr()); // Make list of next instruction
+                                emit("goto", ""); // goto
+                            }
+                            else {
+                                yyerror("Type mismatch");
+                            }
+                        }
+                        | relational_expression GREATER_THAN shift_expression {
+                            if (typecheck($1->addr, $3->addr)) {
+                                $$ = new E();
+                                $$->exprType = 0;   // Boolean type
+                                $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                                emit(">", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name > \$ 3->Array->name
+                                $$->falseList = makelist(nextinstr()); // Make list of next instruction
+                                emit("goto", ""); // goto
+                            }
+                            else {
+                                yyerror("Type mismatch");
+                            }
+                        }
+                        | relational_expression LESS_THAN_EQUAL shift_expression {
+                            if (typecheck($1->addr, $3->addr)) {
+                                $$ = new E();
+                                $$->exprType = 0;   // Boolean type
+                                $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                                emit("<=", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name <= \$ 3->Array->name
+                                $$->falseList = makelist(nextinstr()); // Make list of next instruction
+                                emit("goto", ""); // goto
+                            }
+                            else {
+                                yyerror("Type mismatch");
+                            }
+                        }
+                        | relational_expression GREATER_THAN_EQUAL shift_expression {
+                            if (typecheck($1->addr, $3->addr)) {
+                                $$ = new E();
+                                $$->exprType = 0;   // Boolean type
+                                $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                                emit(">=", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name >= \$ 3->Array->name
+                                $$->falseList = makelist(nextinstr()); // Make list of next instruction
+                                emit("goto", ""); // goto
+                            }
+                            else {
+                                yyerror("Type mismatch");
+                            }
+                        }
                         ;
 
-equality_expression : relational_expression {printf("equality_expression: relational_expression\n");}
-                    | equality_expression EQUAL relational_expression {printf("equality_expression: equality_expression == relational_expression\n");}
-                    | equality_expression NOT_EQUAL relational_expression {printf("equality_expression: equality_expression != relational_expression\n");}
+equality_expression : relational_expression {$$ = $1;} // Pass
+                    | equality_expression EQUAL relational_expression {
+                        if (typecheck($1->addr, $3->addr)) {
+                            convBoolToInt($1);
+                            convBoolToInt($3);
+                            $$ = new E();
+                            $$->exprType = 0;   // Boolean type
+                            $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                            emit("==", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name == \$ 3->Array->name
+                            $$->falseList = makelist(nextinstr()); // Make list of next instruction
+                            emit("goto", ""); // goto
+                        }
+                        else {
+                            yyerror("Type mismatch");
+                        }
+                    }
+                    | equality_expression NOT_EQUAL relational_expression {
+                        if (typecheck($1->addr, $3->addr)) {
+                            convBoolToInt($1);
+                            convBoolToInt($3);
+                            $$ = new E();
+                            $$->exprType = 0;   // Boolean type
+                            $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                            emit("!=", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name != \$ 3->Array->name
+                            $$->falseList = makelist(nextinstr()); // Make list of next instruction
+                            emit("goto", ""); // goto
+                        }
+                        else {
+                            yyerror("Type mismatch");
+                        }
+                    }
                     ;
 
-AND_expression      : equality_expression {printf("AND_expression: equality_expression\n");}
-                    | AND_expression AMPERSAND equality_expression {printf("AND_expression: AND_expression & equality_expression\n");}
+AND_expression      : equality_expression {$$ = $1;} // Pass
+                    | AND_expression AMPERSAND equality_expression {
+                        if (typecheck($1->addr, $3->addr)) {
+                            convBoolToInt($1);
+                            convBoolToInt($3);
+                            $$ = new E();
+                            $$->exprType = 1; // Not boolean
+                            $$->addr = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in addr
+                            emit("&", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name & \$ 3->Array->name
+                        }
+                        else {
+                            yyerror("Type mismatch");
+                        }
+                    }
                     ;
             
-exclusive_OR_expression : AND_expression {printf("exclusive_OR_expression: AND_expression\n");}
-                        | exclusive_OR_expression CARET AND_expression {printf("exclusive_OR_expression: exclusive_OR_expression ^ AND_expression\n");}
+exclusive_OR_expression : AND_expression {$$ = $1;} // Pass
+                        | exclusive_OR_expression CARET AND_expression {
+                            if (typecheck($1->addr, $3->addr)) {
+                                convBoolToInt($1);
+                                convBoolToInt($3);
+                                $$ = new E();
+                                $$->exprType = 1; // Not boolean
+                                $$->addr = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in addr
+                                emit("^", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name ^ \$ 3->Array->name
+                            }
+                            else {
+                                yyerror("Type mismatch");
+                            }
+                        }
                         ;
 
-inclusive_OR_expression : exclusive_OR_expression {printf("inclusive_OR_expression: exclusive_OR_expression\n");}
-                        | inclusive_OR_expression PIPE exclusive_OR_expression {printf("inclusive_OR_expression: inclusive_OR_expression | exclusive_OR_expression\n");}
+inclusive_OR_expression : exclusive_OR_expression {$$ = $1;} // Pass
+                        | inclusive_OR_expression PIPE exclusive_OR_expression {
+                            if (typecheck($1->addr, $3->addr)) {
+                                convBoolToInt($1);
+                                convBoolToInt($3);
+                                $$ = new E();
+                                $$->exprType = 1; // Not boolean
+                                $$->addr = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in addr
+                                emit("|", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name | \$ 3->Array->name
+                            }
+                            else {
+                                yyerror("Type mismatch");
+                            }
+                        }
                         ;
 
-logical_AND_expression  : inclusive_OR_expression {printf("logical_AND_expression: inclusive_OR_expression\n");}
-                        | logical_AND_expression LOGICAL_AND inclusive_OR_expression {printf("logical_AND_expression: logical_AND_expression && inclusive_OR_expression\n");}
+logical_AND_expression  : inclusive_OR_expression {$$ = $1;} // Pass
+                        | logical_AND_expression LOGICAL_AND M inclusive_OR_expression {    // M is augmented non-terminal
+                            convBoolToInt($1);
+                            convBoolToInt($4);
+                            $$ = new E();
+                            $$->exprType = 0;   // Boolean type
+                            backpatch($1->trueList, $3); // Backpatch
+                            $$->trueList = $4->trueList; // Copy true list
+                            $$->falseList = merge($1->falseList, $4->falseList); // Merge false lists
+                        }
                         ;
 
-logical_OR_expression   : logical_AND_expression {printf("logical_OR_expression: logical_AND_expression\n");}
-                        | logical_OR_expression LOGICAL_OR logical_AND_expression {printf("logical_OR_expression: logical_OR_expression || logical_AND_expression\n");}
+logical_OR_expression   : logical_AND_expression {$$ = $1;} // Pass
+                        | logical_OR_expression LOGICAL_OR M logical_AND_expression {   // M is augmented non-terminal
+                            convBoolToInt($1);
+                            convBoolToInt($4);
+                            $$ = new E();
+                            $$->exprType = 0;   // Boolean type
+                            backpatch($1->falseList, $3); // Backpatch
+                            $$->falseList = $4->falseList; // Copy false list
+                            $$->trueList = merge($1->trueList, $4->trueList); // Merge true lists
+                        }
                         ;
 
-conditional_expression  : logical_OR_expression {printf("conditional_expression: logical_OR_expression\n");}
-                        | logical_OR_expression QUESTION expression COLON conditional_expression {printf("conditional_expression: logical_OR_expression ? expression : conditional_expression\n");}
+/* AUGMENTED EMPTY NON-TERMINALS */
+M: %empty { $$ = nextinstr(); } // Has next instruction for backpatching
+
+N: %empty { $$ = new S(); $$->nextList = makelist(nextinstr()); emit("goto", ""); } // Has next list for control flow
+
+conditional_expression  : logical_OR_expression {$$ = $1;} // Pass
+                        | logical_OR_expression N QUESTION M expression N COLON M conditional_expression {  // M and N are augmented non-terminals
+                            $$->addr = symbTable::gentemp($1->addr->type); // Create new temp with type of current and store in addr
+                            $$->addr->update($5->addr->type);
+                            emit("=", $$->addr->name, $9->addr->name); // \$ \$->Array->name = \$ 9->Array->name
+                            list <int> templist1 = makelist(nextinstr());
+                            emit("goto", "");   // goto
+                            backpatch($6->nextList, nextinstr());   // For N2
+                            emit("=", $$->addr->name, $5->addr->name); // \$ \$->Array->name = \$ 5->Array->name
+                            list <int> templist2 = makelist(nextinstr());
+                            templist1 = merge(templist1, templist2);
+                            emit("goto", "");   // goto
+                            backpatch($2->nextList, nextinstr());   // For N1
+                            convIntToBool($1);
+                            backpatch($1->trueList, $4); // Backpatch to M1 when true
+                            backpatch($1->falseList, $8); // Backpatch to M2 when false
+                            backpatch(templist1, nextinstr());
+                        }
                         ;
 
-assignment_expression   : conditional_expression {printf("assignment_expression: conditional_expression\n");}
-                        | unary_expression assignment_operator assignment_expression {printf("assignment_expression: unary_expression assignment_operator assignment_expression\n");}
+assignment_expression   : conditional_expression {$$ = $1;} // Pass
+                        | unary_expression assignment_operator assignment_expression {
+                            if ($1->arrType == 0) { // convert array
+                                $3->addr = convType($3->addr, $1->type->base);
+                                emit("[]=", $1->addr->name, $1->location->name, $3->addr->name); // \$ 1->Array->name [ \$ 1->location->name ] = \$ 3->Array->name
+                            }
+                            else if ($1->arrType == 1) emit("*=", $1->addr->name, $3->addr->name);  // Pointer type
+                            else {
+                                $3->loc = convType($3->addr, $1->addr->type->base);
+                                emit("=", $1->addr->name, $3->loc->name); // \$ 1->Array->name = \$ 3->Array->name
+                            }
+                            $$ = $3;
+                        }
                         ;
 
-assignment_operator     : ASSIGN {printf("assignment_operator: =\n");}
-                        | MULTIPLY_ASSIGN {printf("assignment_operator: *=\n");}
-                        | DIVIDE_ASSIGN {printf("assignment_operator: /=\n");}
-                        | MOD_ASSIGN {printf("assignment_operator: %%=\n");}
-                        | PLUS_ASSIGN {printf("assignment_operator: +=\n");}
-                        | MINUS_ASSIGN {printf("assignment_operator: -=\n");}
-                        | LEFT_SHIFT_ASSIGN {printf("assignment_operator: <<=\n");}
-                        | RIGHT_SHIFT_ASSIGN {printf("assignment_operator: >>=\n");}
-                        | AND_ASSIGN {printf("assignment_operator: &=\n");}
-                        | XOR_ASSIGN {printf("assignment_operator: ^=\n");}
-                        | OR_ASSIGN {printf("assignment_operator: |=\n");}
+assignment_operator     : ASSIGN {}
+                        | MULTIPLY_ASSIGN {}
+                        | DIVIDE_ASSIGN {}
+                        | MOD_ASSIGN {}
+                        | PLUS_ASSIGN {}
+                        | MINUS_ASSIGN {}
+                        | LEFT_SHIFT_ASSIGN {}
+                        | RIGHT_SHIFT_ASSIGN {}
+                        | AND_ASSIGN {}
+                        | XOR_ASSIGN {}
+                        | OR_ASSIGN {}
                         ;
 
-expression  : assignment_expression {printf("expression: assignment_expression\n");}
-            | expression COMMA assignment_expression {printf("expression: expression , assignment_expression\n");}
+expression  : assignment_expression {$$ = $1;} // Pass
+            | expression COMMA assignment_expression {}
             ;
 
-constant_expression : conditional_expression {printf("constant_expression: conditional_expression\n");}
+constant_expression : conditional_expression {}
                     ;
 
 
 
-declaration : declaration_specifiers init_declarator_list_opt SEMICOLON {printf("declaration: declaration_specifiers ;\n");}
+declaration : declaration_specifiers init_declarator_list_opt SEMICOLON {}
             ;
 
-init_declarator_list_opt    : init_declarator_list {printf("init_declarator_list_opt: init_declarator_list\n");}
-                            | {printf("init_declarator_list_opt: (empty)\n");}
+init_declarator_list_opt    : init_declarator_list {}
+                            | %empty {}
                             ;
 
-declaration_specifiers  : storage_class_specifier declaration_specifiers_opt {printf("declaration_specifiers: storage_class_specifier declaration_specifiers_opt\n");}
-                        | type_specifier declaration_specifiers_opt {printf("declaration_specifiers: type_specifier declaration_specifiers_opt\n");}
-                        | type_qualifier declaration_specifiers_opt {printf("declaration_specifiers: type_qualifier declaration_specifiers_opt\n");}
-                        | function_specifier declaration_specifiers_opt {printf("declaration_specifiers: function_specifier declaration_specifiers_opt\n");}
+declaration_specifiers  : storage_class_specifier declaration_specifiers_opt {}
+                        | type_specifier declaration_specifiers_opt {}
+                        | type_qualifier declaration_specifiers_opt {}
+                        | function_specifier declaration_specifiers_opt {}
                         ;
 
-declaration_specifiers_opt  : declaration_specifiers {printf("declaration_specifiers_opt: declaration_specifiers\n");}
-                            | {printf("declaration_specifiers_opt: (empty)\n");}
+declaration_specifiers_opt  : declaration_specifiers {}
+                            | {}
                             ;
 
-init_declarator_list: init_declarator_list COMMA init_declarator {printf("init_declarator_list: init_declarator_list , init_declarator\n");}
-                    | init_declarator {printf("init_declarator_list: init_declarator\n");}
+init_declarator_list: init_declarator_list COMMA init_declarator {}
+                    | init_declarator {}
                     ;
 
-init_declarator : declarator {printf("init_declarator: declarator\n");}
-                | declarator ASSIGN initializer {printf("init_declarator: declarator = initializer\n");}
+init_declarator : declarator {$$ = $1;} // Pass
+                | declarator ASSIGN initializer {
+                    if ($3->initValue != "NULL") $1->initValue = $3->initValue;
+                    emit("=", $1->name, $3->name);
+                }
                 ;
 
-storage_class_specifier : EXTERN {printf("storage_class_specifier: extern\n");}
-                        | STATIC {printf("storage_class_specifier: static\n");}
-                        | AUTO {printf("storage_class_specifier: auto\n");}
-                        | REGISTER {printf("storage_class_specifier: register\n");}
+storage_class_specifier : EXTERN {}
+                        | STATIC {}
+                        | AUTO {}
+                        | REGISTER {}
                         ;
 
-type_specifier  : VOID {printf("type_specifier: void\n");}
-                | CHAR {printf("type_specifier: char\n");}
-                | SHORT {printf("type_specifier: short\n");}
-                | INT {printf("type_specifier: int\n");}
-                | LONG {printf("type_specifier: long\n");}
-                | FLOAT {printf("type_specifier: float\n");}
-                | DOUBLE {printf("type_specifier: double\n");}
-                | SIGNED {printf("type_specifier: signed\n");}
-                | UNSIGNED {printf("type_specifier: unsigned\n");}
-                | BOOL {printf("type_specifier: _Bool\n");}
-                | COMPLEX {printf("type_specifier: _Complex\n");}
-                | IMAGINARY {printf("type_specifier: _Imaginary\n");}
-                | enum_specifier {printf("type_specifier: enum_specifier\n");}
+// Void, char, int and float are the only valid data types to be provided.
+type_specifier  : VOID {data_type = "void";}
+                | CHAR {data_type = "char";}
+                | SHORT {}
+                | INT {data_type = "int";}
+                | LONG {}
+                | FLOAT {data_type = "float";}
+                | DOUBLE {}
+                | SIGNED {}
+                | UNSIGNED {}
+                | BOOL {}
+                | COMPLEX {}
+                | IMAGINARY {}
+                | enum_specifier {}
                 ;
 
-specifier_qualifier_list    : type_specifier specifier_qualifier_list_opt {printf("specifier_qualifier_list: type_specifier specifier_qualifier_list_opt\n");}
-                            | type_qualifier specifier_qualifier_list_opt {printf("specifier_qualifier_list: type_qualifier specifier_qualifier_list_opt\n");}
+specifier_qualifier_list    : type_specifier specifier_qualifier_list_opt {}
+                            | type_qualifier specifier_qualifier_list_opt {}
                             ;
 
-specifier_qualifier_list_opt    : specifier_qualifier_list {printf("specifier_qualifier_list_opt: specifier_qualifier_list\n");}
-                                | {printf("specifier_qualifier_list_opt: (empty)\n");}
+specifier_qualifier_list_opt    : specifier_qualifier_list {}
+                                | %empty {}
                                 ;
 
-enum_specifier  : ENUM identifier_opt CURLY_BRACKET_OPEN enumerator_list CURLY_BRACKET_CLOSE {printf("enum_specifier: enum identifier_opt { enumerator_list }\n");}
-                | ENUM identifier_opt CURLY_BRACKET_OPEN enumerator_list COMMA CURLY_BRACKET_CLOSE {printf("enum_specifier: enum identifier_opt { enumerator_list , }\n");}
-                | ENUM IDENTIFIER {printf("enum_specifier: enum IDENTIFIER\n");}
+enum_specifier  : ENUM identifier_opt CURLY_BRACKET_OPEN enumerator_list CURLY_BRACKET_CLOSE {}
+                | ENUM identifier_opt CURLY_BRACKET_OPEN enumerator_list COMMA CURLY_BRACKET_CLOSE {}
+                | ENUM IDENTIFIER {}
                 ;
 
-identifier_opt  : IDENTIFIER {printf("identifier_opt: IDENTIFIER\n");}
-                | {printf("identifier_opt: (empty)\n");}
+identifier_opt  : IDENTIFIER {}
+                | %empty {}
                 ;
 
-enumerator_list : enumerator {printf("enumerator_list: enumerator\n");}
-                | enumerator_list COMMA enumerator {printf("enumerator_list: enumerator_list , enumerator\n");}
+enumerator_list : enumerator {}
+                | enumerator_list COMMA enumerator {}
                 ;
 // can't use CONSTANT_ENUM as it would conflict with IDENTIFIER
-enumerator  : IDENTIFIER {printf("enumerator: enumeration_constant\n");}
-            | IDENTIFIER ASSIGN constant_expression {printf("enumerator: enumeration_constant = constant_expression\n");}
+enumerator  : IDENTIFIER {}
+            | IDENTIFIER ASSIGN constant_expression {}
             ;
 
-type_qualifier  : CONST {printf("type_qualifier: const\n");}
-                | RESTRICT {printf("type_qualifier: restrict\n");}
-                | VOLATILE {printf("type_qualifier: volatile\n");}
+type_qualifier  : CONST {}
+                | RESTRICT {}
+                | VOLATILE {}
                 ;
 
-function_specifier  : INLINE {printf("function_specifier: inline\n");}
+function_specifier  : INLINE {}
                     ;
 
-declarator  : pointer_opt direct_declarator {printf("declarator: pointer direct_declarator\n");}
+declarator  : pointer direct_declarator {
+                symbolType* t = $1;
+                while(t->arrType != NULL) t = t->arrType;   // Multidimensional array, go to last dimension
+                t->arrType = $2->type;  // Assign type
+                $$ = $2->update($1);    // Update
+            }
+            | direct_declarator {}
             ;
 
-pointer_opt : pointer {printf("pointer_opt: pointer\n");}
-            | {printf("pointer_opt: (empty)\n");}
-            ;
-
-direct_declarator   : IDENTIFIER {printf("direct_declarator: identifier");}
-                    | PARANTHESIS_OPEN declarator PARANTHESIS_CLOSE {printf("direct_declarator: ( declarator )\n");}
-                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt assignment_expression_opt SQ_BRACKET_CLOSE {printf("direct_declarator: direct_declarator [ type_qualifier_list_opt assignment_expression_opt ]\n");}
-                    | direct_declarator SQ_BRACKET_OPEN STATIC type_qualifier_list_opt assignment_expression SQ_BRACKET_CLOSE {printf("direct_declarator: direct_declarator [ static type_qualifier_list_opt assignment_expression ]\n");}
-                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list STATIC assignment_expression SQ_BRACKET_CLOSE {printf("direct_declarator: direct_declarator [ type_qualifier_list static assignment_expression ]\n");}
-                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt ASTERISK SQ_BRACKET_CLOSE {printf("direct_declarator: direct_declarator [ type_qualifier_list_opt * ]\n");}
-                    | direct_declarator PARANTHESIS_OPEN parameter_type_list PARANTHESIS_CLOSE {printf("direct_declarator: direct_declarator ( parameter_type_list )\n");}
-                    | direct_declarator PARANTHESIS_OPEN identifier_list_opt PARANTHESIS_CLOSE {printf("direct_declarator: direct_declarator ( identifier_list_opt )\n");}
+direct_declarator   : IDENTIFIER {
+                        $$ = $1->update(new symbType(data_type));   // Get data type of identifier
+                        currentSymbol = $1; // Update current symbol
+                    }
+                    | PARANTHESIS_OPEN declarator PARANTHESIS_CLOSE { $$ = $2;} // Assignment
+                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt assignment_expression SQ_BRACKET_CLOSE {
+                        symbolType* t = $1->type;
+                        symbolType* prev = NULL;
+                        while(t->type == "arr") {
+                            prev = t;
+                            t = t->arrType;
+                        }
+                        if (prev == NULL) {
+                            int temp = atoi($3->addr->initValue.c_str());   // Init value
+                            symbolType* tp = new symbType("arr", $1->type, temp);   // Create new array type
+                            $$ = $1->update(tp);    // Update
+                        }
+                        else {
+                            int temp = atoi($3->addr->initValue.c_str());   // Init value
+                            prev->arrType = new symbType("arr", t, temp);  // Create new array type
+                            $$ = $1->update($1->type);  // Update
+                        }
+                    }
+                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt SQ_BRACKET_CLOSE {
+                        symbolType* t = $1->type;
+                        symbolType* prev = NULL;
+                        while(t->type == "arr") {
+                            prev = t;
+                            t = t->arrType;
+                        }
+                        if (prev == NULL) {
+                            symbolType* tp = new symbType("arr", $1->type, 0);   // Create new array type
+                            $$ = $1->update(tp);    // Update
+                        }
+                        else {
+                            prev->arrType = new symbType("arr", t, 0);  // Create new array type
+                            $$ = $1->update($1->type);  // Update
+                        }
+                    }
+                    | direct_declarator SQ_BRACKET_OPEN STATIC type_qualifier_list_opt assignment_expression SQ_BRACKET_CLOSE {}
+                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list STATIC assignment_expression SQ_BRACKET_CLOSE {}
+                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt ASTERISK SQ_BRACKET_CLOSE {}
+                    | direct_declarator PARANTHESIS_OPEN change_table parameter_type_list PARANTHESIS_CLOSE {   // change_table non terminal is used to change the symbol table
+                        currentSymbolTable->name = $1->name; // Update name
+                        if ($1->type->base != "void") {
+                            symbol* s = currentSymbolTable->lookup("return");   // Find return symbol
+                            s->update($1->type);    // Update return type
+                        }
+                        $1->nestedTable = currentSymbolTable;    // Update nested table
+                        currentSymbolTable->parent = globalSymbolTable;   // Update parent
+                        switchTable(globalST);  // Switch to global symbol table
+                        currentSymbol = $$; // Update current symbol
+                    }
+                    | direct_declarator PARANTHESIS_OPEN identifier_list PARANTHESIS_CLOSE {}
+                    | direct_declarator PARANTHESIS_OPEN change_table PARANTHESIS_CLOSE {
+                        currentSymbolTable->name = $1->name; // Update name
+                        if ($1->type->base != "void") {
+                            symbol* s = currentSymbolTable->lookup("return");   // Find return symbol
+                            s->update($1->type);    // Update return type
+                        }
+                        $1->nestedTable = currentSymbolTable;    // Update nested table
+                        currentSymbolTable->parent = globalSymbolTable;   // Update parent
+                        switchTable(globalST);  // Switch to global symbol table
+                        currentSymbol = $$; // Update current symbol
+                    }
                     ;
 
-type_qualifier_list_opt : type_qualifier_list {printf("type_qualifier_list_opt: type_qualifier_list\n");}
-                        | {printf("type_qualifier_list_opt: (empty)\n");}
+type_qualifier_list_opt : type_qualifier_list {}
+                        | %empty {}
                         ;
 
-assignment_expression_opt   : assignment_expression {printf("assignment_expression_opt: assignment_expression\n");}
-                            | {printf("assignment_expression_opt: (empty)\n");}
-                            ;
-
-identifier_list_opt : identifier_list {printf("identifier_list_opt: identifier_list\n");}
-                    | {printf("identifier_list_opt: (empty)\n");}
-                    ;
-
-pointer : ASTERISK type_qualifier_list_opt {printf("pointer: * type_qualifier_list_opt\n");}
-        | ASTERISK type_qualifier_list_opt pointer {printf("pointer: * type_qualifier_list_opt pointer\n");}
+pointer : ASTERISK type_qualifier_list_opt {$$ =  new symbType("ptr");} // Create new pointer type
+        | ASTERISK type_qualifier_list_opt pointer {$$ = new symbType("ptr", $3);} // Create new pointer type
         ;
 
-type_qualifier_list : type_qualifier {printf("type_qualifier_list: type_qualifier\n");}
-                    | type_qualifier_list type_qualifier {printf("type_qualifier_list: type_qualifier_list type_qualifier\n");}
+type_qualifier_list : type_qualifier {}
+                    | type_qualifier_list type_qualifier {}
                     ;
 
-parameter_type_list : parameter_list {printf("parameter_type_list: parameter_list\n");}
-                    | parameter_list COMMA ELLIPSIS {printf("parameter_type_list: parameter_list , ...\n");}
+parameter_type_list : parameter_list {}
+                    | parameter_list COMMA ELLIPSIS {}
                     ;
 
-parameter_list  : parameter_declaration {printf("parameter_list: parameter_declaration\n");}
-                | parameter_list COMMA parameter_declaration {printf("parameter_list: parameter_list , parameter_declaration\n");}
+parameter_list  : parameter_declaration {}
+                | parameter_list COMMA parameter_declaration {}
                 ;
 
 parameter_declaration   : declaration_specifiers declarator {printf("parameter_declaration: declaration_specifiers declarator\n");}
                         | declaration_specifiers {printf("parameter_declaration: declaration_specifiers\n");}
                         ;
 
-identifier_list : IDENTIFIER {printf("identifier_list: identifier\n");}
-                | identifier_list COMMA IDENTIFIER {printf("identifier_list: identifier_list , identifier\n");}
+identifier_list : IDENTIFIER {}
+                | identifier_list COMMA IDENTIFIER {}
                 ;
 
-type_name   : specifier_qualifier_list {printf("type_name: specifier_qualifier_list abstract_declarator_opt\n");}
+type_name   : specifier_qualifier_list {}
             ;
 
-initializer : assignment_expression {printf("initializer: assignment_expression\n");}
-            | CURLY_BRACKET_OPEN initializer_list CURLY_BRACKET_CLOSE {printf("initializer: { initializer_list }\n");}
-            | CURLY_BRACKET_OPEN initializer_list COMMA CURLY_BRACKET_CLOSE {printf("initializer: { initializer_list , }\n");}
+initializer : assignment_expression {$$ = $1->addr;}
+            | CURLY_BRACKET_OPEN initializer_list CURLY_BRACKET_CLOSE {}
+            | CURLY_BRACKET_OPEN initializer_list COMMA CURLY_BRACKET_CLOSE {}
             ;
 
-initializer_list    : designation_opt initializer {printf("initializer_list: designation_opt initializer\n");}
-                    | initializer_list COMMA designation_opt initializer {printf("initializer_list: initializer_list , designation_opt initializer\n");}
+initializer_list    : designation_opt initializer {}
+                    | initializer_list COMMA designation_opt initializer {}
                     ;
 
-designation_opt : designation {printf("designation_opt: designation\n");}
-                | {printf("designation_opt: (empty)\n");}
+designation_opt : designation {}
+                | %empty {}
                 ;
 
-designation : designator_list ASSIGN {printf("designation: designator_list =\n");}
+designation : designator_list ASSIGN {}
             ;
 
-designator_list : designator {printf("designator_list: designator\n");}
-                | designator_list designator {printf("designator_list: designator_list designator\n");}
+designator_list : designator {}
+                | designator_list designator {}
                 ;
 
-designator  : SQ_BRACKET_OPEN constant_expression SQ_BRACKET_CLOSE {printf("designator: [ constant_expression ]\n");}
-            | PERIOD IDENTIFIER {printf("designator: . identifier\n");}
+designator  : SQ_BRACKET_OPEN constant_expression SQ_BRACKET_CLOSE {}
+            | PERIOD IDENTIFIER {}
             ;
 
 
-statement   : labeled_statement {printf("statement: labeled_statement\n");}
-            | compound_statement {printf("statement: compound_statement\n");}
-            | expression_statement {printf("statement: expression_statement\n");}
-            | selection_statement {printf("statement: selection_statement\n");}
-            | iteration_statement {printf("statement: iteration_statement\n");}
-            | jump_statement {printf("statement: jump_statement\n");}
+statement   : labeled_statement {}
+            | compound_statement { $$ = $1; }
+            | expression_statement {
+                $$ = new S();
+                $$->nextList = $1->nextList;
+            }
+            | selection_statement { $$ = $1; }
+            | iteration_statement { $$ = $1; }
+            | jump_statement { $$ = $1; }
             ;
 
-labeled_statement   : IDENTIFIER COLON statement {printf("labeled_statement: identifier : statement\n");}
-                    | CASE constant_expression COLON statement {printf("labeled_statement: case constant_expression : statement\n");}
-                    | DEFAULT COLON statement {printf("labeled_statement: default : statement\n");}
+// Added new non-terminal for loops
+loop_statement: labeled_statement {}
+            | expression_statement {
+                $$ = new S();
+                $$->nextList = $1->nextList;
+            }
+            | selection_statement { $$ = $1; }
+            | iteration_statement { $$ = $1; }
+            | jump_statement { $$ = $1; }
+            ;
+
+labeled_statement   : IDENTIFIER COLON statement {}
+                    | CASE constant_expression COLON statement {}
+                    | DEFAULT COLON statement {}
                     ;
 
-compound_statement  : CURLY_BRACKET_OPEN block_item_list_opt CURLY_BRACKET_CLOSE {printf("compound_statement: { block_item_list_opt }\n");}
+compound_statement  : CURLY_BRACKET_OPEN X change_table block_item_list_opt CURLY_BRACKET_CLOSE {   // X and change_table are augmented non-terminals
+                        $$ = $4;
+                        switchTable(currentSymbolTable->parent);
+                    }
                     ;
 
-block_item_list_opt : block_item_list {printf("block_item_list_opt: block_item_list\n");}
-                    | {printf("block_item_list_opt: (empty)\n");}
+block_item_list_opt : block_item_list { $$ = $1; }
+                    | %empty { $$ = new S();}
                     ;
 
-block_item_list : block_item {printf("block_item_list: block_item\n");}
-                | block_item_list block_item {printf("block_item_list: block_item_list block_item\n");}
+block_item_list : block_item {$$ = $1;}
+                | block_item_list M block_item {    // M is augmented non-terminal
+                    $$ = $3;
+                    backpatch($1->nextList, $2);    // Backpatch to jump to 2
+                }
                 ;
 
-block_item  : declaration {printf("block_item: declaration\n");}
-            | statement {printf("block_item: statement\n");}
+block_item  : declaration { $$ = new S(); }
+            | statement { $$ = $1; }
             ;
 
-expression_statement    : expression_opt SEMICOLON {printf("expression_statement: expression_opt ;\n");}
+expression_statement    : expression_opt SEMICOLON { $$ = $1; }
                         ;
 
-expression_opt  : expression {printf("expression_opt: expression\n");}
-                | {printf("expression_opt: (empty)\n");}
+expression_opt  : expression { $$ = $1;}
+                | %empty { $$ = new E(); }
                 ;
 
-selection_statement : IF PARANTHESIS_OPEN expression PARANTHESIS_CLOSE statement {printf("selection_statement: if ( expression ) statement\n");}
-                    | IF PARANTHESIS_OPEN expression PARANTHESIS_CLOSE statement ELSE statement {printf("selection_statement: if ( expression ) statement else statement\n");}
-                    | SWITCH PARANTHESIS_OPEN expression PARANTHESIS_CLOSE statement {printf("selection_statement: switch ( expression ) statement\n");}
+selection_statement : IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M statement N %prec THEN { // M, N and THEN augmented to help with control flow
+                        backpatch($4->nextList, nextinstr());   // Backpatch to next instruction
+                        convIntToBool($3);
+                        $$ = new S();
+                        backpatch($3->trueList, $6);    // Backpatch to M
+                        list<int> temp = merge($3->falseList, $7->nextList); // Merge false lists
+                        $$->nextList = merge(temp, $7->nextList); // Merge false lists
+                    }
+                    | IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M statement N ELSE M statement {
+                        backpatch($4->nextList, nextinstr());   // Backpatch to next instruction
+                        convIntToBool($3);
+                        $$ = new S();
+                        backpatch($3->trueList, $6);    // Backpatch to M1
+                        backpatch($3->falseList, $10);   // Backpatch to M2
+                        list<int> temp = merge($7->falseList, $8->nextList); // Merge false lists
+                        $$->nextList = merge(temp, $11->nextList); // Merge false lists
+                    }
+                    | SWITCH PARANTHESIS_OPEN expression PARANTHESIS_CLOSE statement {}
                     ;
 
-iteration_statement : WHILE PARANTHESIS_OPEN expression PARANTHESIS_CLOSE statement {printf("iteration_statement: while ( expression ) statement\n");}
-                    | DO statement WHILE PARANTHESIS_OPEN expression PARANTHESIS_CLOSE SEMICOLON {printf("iteration_statement: do statement while ( expression ) ;\n");}
-                    | FOR PARANTHESIS_OPEN expression_opt SEMICOLON expression_opt SEMICOLON expression_opt PARANTHESIS_CLOSE statement {printf("iteration_statement: for ( expression_opt ; expression_opt ; expression_opt ) statement\n");}
-                    | FOR PARANTHESIS_OPEN declaration expression_opt SEMICOLON expression_opt PARANTHESIS_CLOSE statement {printf("iteration_statement: for ( declaration expression_opt ; expression_opt ) statement\n");}
+iteration_statement : WHILE W PARANTHESIS_OPEN X change_table M expression PARANTHESIS_CLOSE M loop_statement { // W, X, M and change_table are augmented non-terminals
+                        $$ = new S(); // new statement
+                        convIntToBool($7);
+                        backpatch($10->nextList, $6);   // Backpatch to M1
+                        backpatch($7->trueList, $9);    // Backpatch to M2
+                        $$->nextList = $7->falseList;  // Copy false list
+                        emit("goto", convIntToStr($6)); // goto
+                        blockName = "";
+                        switchTable(currentSymbolTable->parent);
+                    }
+                    | DO D M loop_statement M WHILE PARANTHESIS_OPEN expression PARANTHESIS_CLOSE SEMICOLON {   // D and M are augmented non-terminals
+                        $$ = new S();
+                        convIntToBool($8);
+                        backpatch($8->trueList, $3);    // Backpatch to D
+                        backpatch($4->nextList, $5);    // Backpatch to M
+                        $$->nextList = $8->falseList;  // Copy false list
+                        blockName = "";
+                    }
+                    | DO D CURLY_BRACE_OPEN M block_item_list_opt CURLY_BRACKET_CLOSE M WHILE PARANTHESIS_OPEN expression PARANTHESIS_CLOSE SEMICOLON {  // D and M are augmented non-terminals
+                        $$ = new S();
+                        convIntToBool($10);
+                        backpatch($10->trueList, $4);    // Backpatch to M1
+                        backpatch($5->nextList, $7);    // Backpatch to M2
+                        $$->nextList = $10->falseList;  // Copy false list
+                        blockName = "";
+                    }
+                    | FOR F PARANTHESIS_OPEN X change_table declaration M expression_statement M expression N PARANTHESIS_CLOSE M loop_statement {  // F, X, M, N and change_table are augmented non-terminals
+                        $$ = new S();
+                        convIntToBool($8);
+                        backpatch($8->trueList, $13); // Backpatch to M3
+                        backpatch($11->nextList, $7); // Backpatch to M1
+                        backpatch($14->nextList, $9); // Backpatch to N
+                        emit("goto", convIntToStr($9)); // goto
+                        $$->nextList = $8->falseList;  // Copy false list
+                        blockName = "";
+                        switchTable(currentSymbolTable->parent);
+                    }
+                    | FOR F PARANTHESIS_OPEN X change_table declaration M expression_statement M expression N PARANTHESIS_CLOSE M CURLY_BRACKET_OPEN block_item_list_opt CURLY_BRACKET_CLOSE {  // F, X, M, N and change_table are augmented non-terminals
+                        $$ = new S();
+                        convIntToBool($8);
+                        backpatch($8->trueList, $13); // Backpatch to M3
+                        backpatch($11->nextList, $7); // Backpatch to M1
+                        backpatch($15->nextList, $9); // Backpatch to N
+                        emit("goto", convIntToStr($9)); // goto
+                        $$->nextList = $8->falseList;  // Copy false list
+                        blockName = "";
+                        switchTable(currentSymbolTable->parent);
+                    }
+                    | FOR F PARANTHESIS_OPEN X change_table expression_statement M expression_statement M expression N PARANTHESIS_CLOSE M CURLY_BRACKET_OPEN block_item_list_opt CURLY_BRACKET_CLOSE { // F, X, M, N and change_table are augmented non-terminals
+                        $$ = new S();
+                        convIntToBool($8);
+                        backpatch($8->trueList, $13); // Backpatch to M3
+                        backpatch($11->nextList, $7); // Backpatch to M1
+                        backpatch($15->nextList, $9); // Backpatch to N
+                        emit("goto", convIntToStr($9)); // goto
+                        $$->nextList = $8->falseList;  // Copy false list
+                        blockName = "";
+                        switchTable(currentSymbolTable->parent);
+                    }
                     ;
 
-jump_statement  : GOTO IDENTIFIER SEMICOLON {printf("jump_statement: goto identifier ;\n");}
-                | CONTINUE SEMICOLON {printf("jump_statement: continue ;\n");}
-                | BREAK SEMICOLON {printf("jump_statement: break ;\n");}
-                | RETURN expression_opt SEMICOLON {printf("jump_statement: return expression_opt ;\n");}
+// Augmented empty non-terminals
+F   : %empty { blockName = "FOR"; }
+    ;
+W   : %empty { blockName = "WHILE"; }
+    ;
+D   : %empty { blockName = "DO"; }
+    ;
+X   : %empty { 
+        string newSymbolTableName = currentSymbolTable->name + "." + blockName + "$" + to_string(SymbolTableCount++); // Name the new table
+        symbol* symbolFound = currentSymbolTable->lookup(newSymbolTableName); // Find the symbol
+        symbolFound->nestedTable = new symbolTable(newSymbolTableName); // Create new symbol table
+        symbolFound->name = newSymbolTableName; // Update name
+        symbolFound->nestedTable->parent = currentSymbolTable; // Update parent
+        symbolFound->type = new symbType("block"); // Update type
+        currentSymbol = symbolFound; // Update current symbol
+    }
+    ;
+change_table    : %empty {
+                    // Switch to new symbol table, if it does not exist, create it
+                    if (currentSymbol->nestedTable != NULL) {
+                        switchTable(currentSymbol->nestedTable); // Switch to nested table
+                        emit("label", currentSymbolTable->name);
+                    }
+                    else {
+                        switchTable(new symbolTable(""));
+                    }
+                }
+                ;
+
+jump_statement  : GOTO IDENTIFIER SEMICOLON {}
+                | CONTINUE SEMICOLON { $$ = new S(); }
+                | BREAK SEMICOLON { $$ = new S(); }
+                | RETURN expression SEMICOLON {
+                    $$ = new S();
+                    emit("return", $2->addr->name); // return \$ 2->Array->name
+                }
+                | RETURN SEMICOLON {
+                    $$ = new S();
+                    emit("return", ""); // return
+                }
                 ;
 
 
 
-translation_unit    : external_declaration {printf("translation_unit: external_declaration\n");}
-                    | translation_unit external_declaration {printf("translation_unit: translation_unit external_declaration\n");}
+translation_unit    : external_declaration {}
+                    | translation_unit external_declaration {}
                     ;
 
-external_declaration    : function_definition {printf("external_declaration: function_definition\n");}
-                        | declaration {printf("external_declaration: declaration\n");}
+external_declaration    : function_definition {}
+                        | declaration {}
                         ;
 
-function_definition : declaration_specifiers declarator declaration_list_opt compound_statement {printf("function_definition: declaration_specifiers declarator declaration_list_opt compound_statement\n");}
+function_definition : declaration_specifiers declarator declaration_list_opt change_table CURLY_BRACKET_OPEN block_item_list_opt CURLY_BRACKET_CLOSE {
+                        currentSymbolTable->parent = globalSymbolTable;
+                        SymbolTableCount = 0;
+                        switchTable(globalST);  // End of function, switch to global symbol table
+                    }
                     ;
 
-declaration_list_opt    : declaration_list {printf("declaration_list_opt: declaration_list\n");}
-                        | {printf("declaration_list_opt: (empty)\n");}
+declaration_list_opt    : declaration_list {}
+                        | %empty {}
                         ;
 
-declaration_list    : declaration {printf("declaration_list: declaration\n");}
-                    | declaration_list declaration {printf("declaration_list: declaration_list declaration\n");}
+declaration_list    : declaration {}
+                    | declaration_list declaration {}
                     ;
 %%
 
-void yyerror(char *s) {
-    printf("ERROR: %s\n\t\t at line: %d\n\tnear \" %s \"\n", s, yylineno, yytext);
+// ERROR
+void yyerror(string s) {
+    cout << "ERROR: " << s << endl;
+    cout << "At line: " << yylineno << endl;
+    cout << "Near: " << yytext << endl;
 }
