@@ -7,6 +7,7 @@ using namespace std;
 
 /* Sizes for data types as changeable parameters. */
 #define sizeof_void 0
+#define sizeof_func 0
 #define sizeof_char 1
 #define sizeof_int 4
 #define sizeof_float 8
@@ -39,7 +40,7 @@ struct symbol {
     int offset; // Offset of symbol
     symbolTable* nestedTable;  // Nested symbol table if symbol is a function/record
 
-    symbol(string name_, string type_, symbolType* arrType = NULL, int width = 0); // Constructor
+    symbol(string name_, string type_ = "int", symbolType* arrType = NULL, int width = 0); // Constructor
     symbol* update(symbolType* t);  // Update type of symbol to t
 };
 
@@ -49,7 +50,7 @@ struct symbolType {
     int width; // Width of symbol, 1 by default. Size for arrays
     symbolType* arrType;   // Array type of symbol
 
-    symbolType(string base_, symbolType* arrType_ = NULL, int width_ = 0); // Constructor
+    symbolType(string base_, symbolType* arrType_ = NULL, int width_ = 1); // Constructor
 };
 
 class symbolTable {
@@ -69,8 +70,8 @@ class symbolTable {
 
 struct quad {
     string opcode; // Opcode of quad
-    string argument1;  // First argument of quad
-    string argument2;  // Second argument of quad
+    string arguement1;  // First argument of quad
+    string arguement2;  // Second argument of quad
     string result; // Result of quad
 
     quad(string res_, string arg1_, string op_, string arg2_ = ""); // Constructor for string argument
@@ -83,14 +84,15 @@ struct quad {
 class quadArray{
     public:
     vector <quad> array;    // Vector of quads
-
-    // Method to add a new quad.
-    void emit(string opcode, string res, string arg1 = "", string arg2 = ""); // String type arg
-    void emit(string opcode, string res, int arg1, string arg2 = ""); // Int type arg
-    void emit(string opcode, string res, float arg1, string arg2 = ""); // Float type arg
-
     void print();  // Print quad array
 };
+
+// Method to add a new quad.
+void emit(string opcode, string res, string arg1 = "", string arg2 = ""); // String type arg
+void emit(string opcode, string res, int arg1, string arg2 = ""); // Int type arg
+void emit(string opcode, string res, float arg1, string arg2 = ""); // Float type arg
+
+
 
 // Array struct for arrays and pointers
 struct A {
