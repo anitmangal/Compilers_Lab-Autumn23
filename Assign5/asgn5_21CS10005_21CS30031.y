@@ -13,7 +13,7 @@
     int iValue;     // Integer value
     char *sValue;   // String value
     symbol* symb;       // Symbol
-    symbolType* symbType;   // Symbol type
+    symbolType* symbolType;   // Symbol type
     E* expr;   // Expression
     S* statem;  // Statement
     A* arr; // Array
@@ -47,7 +47,7 @@
 %type <param_count> argument_expression_list argument_expression_list_opt   // Number of parameters non-terminals
 %type <expr> expression expression_opt primary_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression expression_statement   // Expression type non-terminals
 %type <statem> statement labeled_statement compound_statement selection_statement iteration_statement jump_statement loop_statement block_item block_item_list block_item_list_opt  // Statement type non-terminals
-%type <symbType> pointer pointer_opt   // Pointer non-terminal
+%type <symbolType> pointer   // Pointer non-terminal
 %type <symb> constant initializer direct_declarator init_declarator declarator  // Symbol non-terminals
 %type <arr> postfix_expression unary_expression cast_expression // Array non-terminals
 %type <instr_ind> M // Augmented non-terminal to help with backpatching by storing next instruction index
@@ -57,15 +57,15 @@
 
 
 constant            : CONSTANT_INT  {
-                        $$ = symbTable::gentemp(new symbType("int"), convIntToStr($1)); // Create new temp with type int and store value
+                        $$ = symbolTable::gentemp(new symbolType("int"), convIntToStr($1)); // Create new temp with type int and store value
                         emit("=", $$->name, $1);
                     }
                     | CONSTANT_FLOAT{
-                        $$ = symbTable::gentemp(new symbType("float"), string($1));  // Create new temp with type double and store value
+                        $$ = symbolTable::gentemp(new symbolType("float"), string($1));  // Create new temp with type double and store value
                         emit("=", $$->name, string($1));
                     }
                     | CONSTANT_CHAR {
-                        $$ = symbTable::gentemp(new symbType("char"), string($1));   // Create new temp with type char and store value
+                        $$ = symbolTable::gentemp(new symbolType("char"), string($1));   // Create new temp with type char and store value
                         emit("=", $$->name, string($1));
                     }
                     ;
@@ -81,7 +81,8 @@ primary_expression  : IDENTIFIER    {
                     }
                     | LITERAL       {
                         $$ = new E();  // New expression
-                        $$->addr = symbTable::gentemp(new symbType("ptr"), $1); // Create new temp with type ptr and store value
+                        $$->addr = symbolTable::gentemp(new symbolType("ptr"), $1); // Create new temp with type ptr and store value
+                        $$->addr->type->arrType = new symbolType("char");
                     }
                     | PARANTHESIS_OPEN expression PARANTHESIS_CLOSE { $$ = $2 } // Assignment
                     ;
@@ -96,11 +97,11 @@ postfix_expression  : primary_expression {
                         $$ = new A();   // New Array
                         $$->type = $1->type->arrType;   // Update type
                         $$->addr = $1->addr;  // Copy the incoming symbol
-                        $$->location = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in location which will have the address of the array element
+                        $$->location = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in location which will have the address of the array element
                         $$->arrType = 0; // A type is array
 
                         if ($1->arrType == 0) { // Array of array
-                            symbol* temp = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in temp
+                            symbol* temp = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in temp
                             int sz = sizeOfType($$->type);  // Get size of type of current
                             emit("*", temp->name, $3->addr->name, convIntToStr(sz)); // temp = \$ 3 * sz
                             emit("+", $$->addr->name, $1->addr->name, temp->name); // \$ \$ ->location = \$ 1->location + temp
@@ -112,20 +113,20 @@ postfix_expression  : primary_expression {
                     }
                     | postfix_expression PARANTHESIS_OPEN argument_expression_list_opt PARANTHESIS_CLOSE {
                         $$ = new A();   // Make new array
-                        $$->addr = symbTable::gentemp($1->type); // Get return type
+                        $$->addr = symbolTable::gentemp($1->type); // Get return type
                         emit("call", $$->addr->name, $1->addr->name, convIntToStr($3->param_count)); // call \$ \$->Array->name \$ 3->param_count
                     }
                     | postfix_expression PERIOD IDENTIFIER {}
                     | postfix_expression ARROW IDENTIFIER {}
                     | postfix_expression INCREMENT {
                         $$ = new A();   // Make new array
-                        $$->addr = symbTable::gentemp($1->addr->type);    // Make new temp with type of current
+                        $$->addr = symbolTable::gentemp($1->addr->type);    // Make new temp with type of current
                         emit("=", $$->addr->name, $1->addr->name);    // \$ \$->Array->name = \$ 1->Array->name
                         emit("+", $1->addr->name, $1->addr->name, "1");   // \$ 1->Array->name = \$ 1->Array->name + 1
                     }
                     | postfix_expression DECREMENT {
                         $$ = new A();   // Make new array
-                        $$->addr = symbTable::gentemp($1->addr->type);    // Make new temp with type of current
+                        $$->addr = symbolTable::gentemp($1->addr->type);    // Make new temp with type of current
                         emit("=", $$->addr->name, $1->addr->name);    // \$ \$->Array->name = \$ 1->Array->name
                         emit("-", $1->addr->name, $1->addr->name, "1");   // \$ 1->Array->name = \$ 1->Array->name - 1
                     }
@@ -134,7 +135,7 @@ postfix_expression  : primary_expression {
                     ;
 
 argument_expression_list_opt : argument_expression_list {$$ = $1;} // Copy the number of parameters
-                            |%empty {$$ = 0;}   // No parameters
+                            | %empty {$$ = 0;}   // No parameters
                             ;
 
 argument_expression_list    : assignment_expression {
@@ -159,19 +160,19 @@ unary_expression    : postfix_expression { $$ = $1; } // Pass the expression
                     | unary_operator cast_expression {
                         $$ = new A();
                         if ($1 == '&') {
-                            $$->addr = symbTable::gentemp(new symbType("ptr")); // Create new temp with type ptr and store in addr
+                            $$->addr = symbolTable::gentemp(new symbolType("ptr")); // Create new temp with type ptr and store in addr
                             $$->addr->type->arrType = $2->addr->type;
                             emit("= &", $$->addr->name, $2->addr->name); // \$ \$->Array->name = & \$ 2->Array->name
                         }
                         else if ($1 == '*') {
                             $$->arrType = 1; // Pointer type
-                            $$->location = symbTable::gentemp($2->addr->type->arrType); // Create new temp with type of current and store in location
+                            $$->location = symbolTable::gentemp($2->addr->type->arrType); // Create new temp with type of current and store in location
                             $$->addr = $2->addr;    // Copy the incoming symbol
                             emit("= *", $$->location->name, $2->addr->name); // \$ \$->location->name = * \$ 2->Array->name
                         }
                         else if ($1 == '+') $$ = $2;
                         else if ($1 == '-' || $1 == '~' || $1 == '!') {
-                            $$->addr = symbTable::gentemp($2->addr->type->base); // Create new temp with type of current and store in addr
+                            $$->addr = symbolTable::gentemp($2->addr->type->base); // Create new temp with type of current and store in addr
                             emit("= "+$1, $$->addr->name, $2->addr->name); // \$ \$->Array->name = - \$ 2->Array->name
                         }
                     }
@@ -197,7 +198,7 @@ cast_expression     : unary_expression {$$ =  $1;}
 multiplicative_expression : cast_expression {
                             $$ = new E(); // new expression
                             if ($1->arrType == 0) {
-                                $$->addr = symbTable::gentemp($1->addr->type); // Create new temp with type of current and store in addr
+                                $$->addr = symbolTable::gentemp($1->addr->type); // Create new temp with type of current and store in addr
                                 emit("=[]", $$->addr->name, $1->addr->name, $1->location->name); // \$ \$->Array->name = \$ 1->Array->name [ \$ 1->location->name ]
                             }
                             else if($1->arrType == 1) {
@@ -208,7 +209,7 @@ multiplicative_expression : cast_expression {
                           | multiplicative_expression ASTERISK cast_expression {
                             if (typecheck($1->addr, $3->addr)) {
                                 $$ = new E();
-                                $$->addr = symbTable::gentemp(new symbType($1->addr->type->base)); // Create new temp with type int and store in addr
+                                $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
                                 emit("*", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name * \$ 3->Array->name
                             }
                             else {
@@ -218,7 +219,7 @@ multiplicative_expression : cast_expression {
                           | multiplicative_expression SLASH cast_expression {
                             if (typecheck($1->addr, $3->addr)) {
                                 $$ = new E();
-                                $$->addr = symbTable::gentemp(new symbType($1->addr->type->base)); // Create new temp with type int and store in addr
+                                $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
                                 emit("/", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name / \$ 3->Array->name
                             }
                             else {
@@ -228,7 +229,7 @@ multiplicative_expression : cast_expression {
                           | multiplicative_expression PERCENT cast_expression {
                             if (typecheck($1->addr, $3->addr)) {
                                 $$ = new E();
-                                $$->addr = symbTable::gentemp(new symbType($1->addr->type->base)); // Create new temp with type int and store in addr
+                                $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
                                 emit("%", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name % \$ 3->Array->name
                             }
                             else {
@@ -241,7 +242,7 @@ additive_expression : multiplicative_expression { $$ = $1; } // Pass
                     | additive_expression PLUS multiplicative_expression {
                         if (typecheck($1->addr, $3->addr)) {
                             $$ = new E();
-                            $$->addr = symbTable::gentemp(new symbType($1->addr->type->base)); // Create new temp with type int and store in addr
+                            $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
                             emit("+", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name + \$ 3->Array->name
                         }
                         else {
@@ -251,7 +252,7 @@ additive_expression : multiplicative_expression { $$ = $1; } // Pass
                     | additive_expression MINUS multiplicative_expression {
                         if (typecheck($1->addr, $3->addr)) {
                             $$ = new E();
-                            $$->addr = symbTable::gentemp(new symbType($1->addr->type->base)); // Create new temp with type int and store in addr
+                            $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
                             emit("-", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name - \$ 3->Array->name
                         }
                         else {
@@ -264,7 +265,7 @@ shift_expression    : additive_expression {$$ = $1;} // Pass
                     | shift_expression LEFT_SHIFT additive_expression {
                         if ($3->addr->type->base == "int") {
                             $$ = new E();
-                            $$->addr = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in addr
+                            $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
                             emit("<<", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name << \$ 3->Array->name
                         }
                         else {
@@ -274,7 +275,7 @@ shift_expression    : additive_expression {$$ = $1;} // Pass
                     | shift_expression RIGHT_SHIFT additive_expression {
                         if ($3->addr->type->base == "int") {
                             $$ = new E();
-                            $$->addr = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in addr
+                            $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
                             emit(">>", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name >> \$ 3->Array->name
                         }
                         else {
@@ -378,7 +379,7 @@ AND_expression      : equality_expression {$$ = $1;} // Pass
                             convBoolToInt($3);
                             $$ = new E();
                             $$->exprType = 1; // Not boolean
-                            $$->addr = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in addr
+                            $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
                             emit("&", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name & \$ 3->Array->name
                         }
                         else {
@@ -394,7 +395,7 @@ exclusive_OR_expression : AND_expression {$$ = $1;} // Pass
                                 convBoolToInt($3);
                                 $$ = new E();
                                 $$->exprType = 1; // Not boolean
-                                $$->addr = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in addr
+                                $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
                                 emit("^", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name ^ \$ 3->Array->name
                             }
                             else {
@@ -410,7 +411,7 @@ inclusive_OR_expression : exclusive_OR_expression {$$ = $1;} // Pass
                                 convBoolToInt($3);
                                 $$ = new E();
                                 $$->exprType = 1; // Not boolean
-                                $$->addr = symbTable::gentemp(new symbType("int")); // Create new temp with type int and store in addr
+                                $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
                                 emit("|", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name | \$ 3->Array->name
                             }
                             else {
@@ -450,7 +451,7 @@ N: %empty { $$ = new S(); $$->nextList = makelist(nextinstr()); emit("goto", "")
 
 conditional_expression  : logical_OR_expression {$$ = $1;} // Pass
                         | logical_OR_expression N QUESTION M expression N COLON M conditional_expression {  // M and N are augmented non-terminals
-                            $$->addr = symbTable::gentemp($1->addr->type); // Create new temp with type of current and store in addr
+                            $$->addr = symbolTable::gentemp($1->addr->type); // Create new temp with type of current and store in addr
                             $$->addr->update($5->addr->type);
                             emit("=", $$->addr->name, $9->addr->name); // \$ \$->Array->name = \$ 9->Array->name
                             list <int> templist1 = makelist(nextinstr());
@@ -519,7 +520,7 @@ declaration_specifiers  : storage_class_specifier declaration_specifiers_opt {}
                         ;
 
 declaration_specifiers_opt  : declaration_specifiers {}
-                            | {}
+                            | %empty{}
                             ;
 
 init_declarator_list: init_declarator_list COMMA init_declarator {}
@@ -598,7 +599,7 @@ declarator  : pointer direct_declarator {
             ;
 
 direct_declarator   : IDENTIFIER {
-                        $$ = $1->update(new symbType(data_type));   // Get data type of identifier
+                        $$ = $1->update(new symbolType(data_type));   // Get data type of identifier
                         currentSymbol = $1; // Update current symbol
                     }
                     | PARANTHESIS_OPEN declarator PARANTHESIS_CLOSE { $$ = $2;} // Assignment
@@ -610,13 +611,13 @@ direct_declarator   : IDENTIFIER {
                             t = t->arrType;
                         }
                         if (prev == NULL) {
-                            int temp = atoi($3->addr->initValue.c_str());   // Init value
-                            symbolType* tp = new symbType("arr", $1->type, temp);   // Create new array type
+                            int temp = atoi($4->addr->initValue.c_str());   // Init value
+                            symbolType* tp = new symbolType("arr", $1->type, temp);   // Create new array type
                             $$ = $1->update(tp);    // Update
                         }
                         else {
-                            int temp = atoi($3->addr->initValue.c_str());   // Init value
-                            prev->arrType = new symbType("arr", t, temp);  // Create new array type
+                            int temp = atoi($4->addr->initValue.c_str());   // Init value
+                            prev->arrType = new symbolType("arr", t, temp);  // Create new array type
                             $$ = $1->update($1->type);  // Update
                         }
                     }
@@ -628,11 +629,11 @@ direct_declarator   : IDENTIFIER {
                             t = t->arrType;
                         }
                         if (prev == NULL) {
-                            symbolType* tp = new symbType("arr", $1->type, 0);   // Create new array type
+                            symbolType* tp = new symbolType("arr", $1->type, 0);   // Create new array type
                             $$ = $1->update(tp);    // Update
                         }
                         else {
-                            prev->arrType = new symbType("arr", t, 0);  // Create new array type
+                            prev->arrType = new symbolType("arr", t, 0);  // Create new array type
                             $$ = $1->update($1->type);  // Update
                         }
                     }
@@ -668,8 +669,8 @@ type_qualifier_list_opt : type_qualifier_list {}
                         | %empty {}
                         ;
 
-pointer : ASTERISK type_qualifier_list_opt {$$ =  new symbType("ptr");} // Create new pointer type
-        | ASTERISK type_qualifier_list_opt pointer {$$ = new symbType("ptr", $3);} // Create new pointer type
+pointer : ASTERISK type_qualifier_list_opt {$$ =  new symbolType("ptr");} // Create new pointer type
+        | ASTERISK type_qualifier_list_opt pointer {$$ = new symbolType("ptr", $3);} // Create new pointer type
         ;
 
 type_qualifier_list : type_qualifier {}
@@ -813,7 +814,7 @@ iteration_statement : WHILE W PARANTHESIS_OPEN X change_table M expression PARAN
                         $$->nextList = $8->falseList;  // Copy false list
                         blockName = "";
                     }
-                    | DO D CURLY_BRACE_OPEN M block_item_list_opt CURLY_BRACKET_CLOSE M WHILE PARANTHESIS_OPEN expression PARANTHESIS_CLOSE SEMICOLON {  // D and M are augmented non-terminals
+                    | DO D CURLY_BRACKET_OPEN M block_item_list_opt CURLY_BRACKET_CLOSE M WHILE PARANTHESIS_OPEN expression PARANTHESIS_CLOSE SEMICOLON {  // D and M are augmented non-terminals
                         $$ = new S();
                         convIntToBool($10);
                         backpatch($10->trueList, $4);    // Backpatch to M1
@@ -869,7 +870,7 @@ X   : %empty {
         symbolFound->nestedTable = new symbolTable(newSymbolTableName); // Create new symbol table
         symbolFound->name = newSymbolTableName; // Update name
         symbolFound->nestedTable->parent = currentSymbolTable; // Update parent
-        symbolFound->type = new symbType("block"); // Update type
+        symbolFound->type = new symbolType("block"); // Update type
         currentSymbol = symbolFound; // Update current symbol
     }
     ;
