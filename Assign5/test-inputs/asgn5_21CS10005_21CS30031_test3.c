@@ -3,14 +3,13 @@
 int N = 4;
 
 void getCF (int mat[N][N], int temp[N][N], int p, int q, int n) {
-    int i = 0, j = 0, row = 0, col = 0, xtemp;
+    int i = 0, j = 0, row = 0, col = 0;
  
     for (row = 0; row < n; row++) {                       // nested for loop
         for (col = 0; col < n; col++) {
-            if (row != p && col != q)
+            if (row != p && col != q) {
                 temp[i][j++] = mat[row][col];
-            else
-                xtemp = 0;
+            }
             if (j == n - 1) {
                 j = 0;
                 i++;

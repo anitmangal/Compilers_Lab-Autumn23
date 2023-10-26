@@ -130,7 +130,7 @@ WHITE_SPACE     [  \t\n]
 "*="                        {return MULTIPLY_ASSIGN;}
 "/="                        {return DIVIDE_ASSIGN;}
 "%="                        {return MOD_ASSIGN;}
-"+="                        {return ADD_ASSIGN;}
+"+="                        {return PLUS_ASSIGN;}
 "-="                        {return MINUS_ASSIGN;}
 "<<="                       {return LEFT_SHIFT_ASSIGN;}
 ">>="                       {return RIGHT_SHIFT_ASSIGN;}
