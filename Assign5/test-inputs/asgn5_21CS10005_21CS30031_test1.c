@@ -1,35 +1,39 @@
-// Declarations (variables(int, float, char), 1D array, 2D array, functions) and arithmetic operations
+// Typecasting and pointers
 
-// Global declarations
-float d = 2.3;
-char c;	
-int i, j, k, l, m, n, o;
-int w[10];                      // 1D array declaration
-float f[20][50];                // 2D array declaration
-int a = 4, *p, b;               // pointer declaration
-
-void func (int i, float d) {
-    d = (float)(i ^ 7);
+void customSwap(int *a, int *b) {
+    int temp = *a;
+    *a = *b;
+    *b = temp;
     return;
 }
 
-int main () {
-    // Variable Declaration
-    int x = 120;
-    int y = 17;
-    char ch = 'c', d = 'a';     // character definitions
+void customSort(int *data, int length) {
+    int i, j, minIndex;
+    i = 0;
+    j = 0;
+    for (i = 0; i < length - 1; i++) {
+        minIndex = i;
+        for (j = i + 1; j < length; j++) {
+            if (data[j] < data[minIndex]) {
+                minIndex = j;
+            }
+        }
+        customSwap(&data[minIndex], &data[i]);
+    }
+    return;
+}
 
-    // Arithmetic Operations
-    i = x + y;
-    j = x - y;
-    k = x * y;
-    l = x / y;
-    m = x % y;
-    n = x & y;
-    o = x | y;
-    
-    y = i << 2;
-    x = i >> 1;
+int main() {
+    int numbers[7];
+    numbers[0] = (int)1.6;  // Type casting float to int
+    numbers[1] = -4;
+    numbers[2] = 7;
+    numbers[3] = (int)8.9;
+    numbers[4] = -342;
+    numbers[5] = (int)0.6;
+    numbers[6] = 100;
+    int length = 7;
+    customSort(numbers, length);
 
     return 0;
 }
