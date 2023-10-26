@@ -446,7 +446,7 @@ logical_OR_expression   : logical_AND_expression {$$ = $1;} // Pass
 
 conditional_expression  : logical_OR_expression {$$ = $1;} // Pass
                         | logical_OR_expression N QUESTION M expression N COLON M conditional_expression {  // M and N are augmented non-terminals
-                            $$->addr = symbolTable::gentemp($1->addr->type); // Create new temp with type of current and store in addr
+                            $$->addr = symbolTable::gentemp($5->addr->type); // Create new temp with type of current and store in addr
                             $$->addr->update($5->addr->type);
                             emit("=", $$->addr->name, $9->addr->name); // \$ \$->Array->name = \$ 9->Array->name
                             list <int> templist1 = makelist(nextinstr());
