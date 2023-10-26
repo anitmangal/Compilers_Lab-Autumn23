@@ -64,7 +64,7 @@ class symbolTable {
     symbolTable(string name_ = "NULL");  // Constructor
 
     symbol* lookup(string name);    // Lookup for symbol in symbol table
-    static symbol* gentemp(symbolType* type_, string initValue_ = "NULL"); // Generate temporary symbol
+    static symbol* gentemp(symbolType* type_, string initValue_ = ""); // Generate temporary symbol
     void update();  // Update offset of symbols in symbol table
     void print();   // Print symbol table
 };
