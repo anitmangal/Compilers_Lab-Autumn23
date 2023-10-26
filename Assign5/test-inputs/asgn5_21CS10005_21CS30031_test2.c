@@ -1,47 +1,51 @@
-// Function calls and conditional statements (ternary and if-else)
+// Arrays (multidimensional), loops and nested loops
 
-int max (int x, int y) {
-    int ans = 0, xtemp = 0;
-    if (x > 0)                      // if-else
-        ans = x;
-    else
-        ans = y;
+int arraySize = 3;
 
-    if(ans < 0)
-        ans = -ans;
-    return ans;
-}
+void generateSubmatrix(int matrix[arraySize][arraySize], int submatrix[arraySize][arraySize], int row, int col, int size) {
+    int i = 0, j = 0, subRow = 0, subCol = 0;
 
-
-int min (int x, int y) {
-    int ans = y;
-    // ans = x > y ? y:x;              // ternary
-    return ans;
-}
-
-void print (char *ch) {
-    // print the char array
+    for (subRow = 0; subRow < size; subRow++) { // Nested for loop
+        for (subCol = 0; subCol < size; subCol++) {
+            if (subRow != row && subCol != col) {
+                submatrix[i][j++] = matrix[subRow][subCol];
+            }
+            if (j == size - 1) {
+                j = 0;
+                i++;
+            }
+        }
+    }
     return;
-}
-
-void print_greater (int m, int n) {
-    char greater_m[] = "m > n";
-    char greater_n[] = "n > m";
-    // m > n ? print(greater_m) : print(greater_n);
-    return;
-}
-
-int add(int a, int b) {
-    int i = min(a, b);            // nested function calls
-    int j = max(a, b);
-    int j = 0;
-    int d = j + i;
-    return d;
 }
 
 int main() {
-    int a, b, sum;
-    a = 1, b = 52;
-    sum = add(a, b);
+    int numbers[4]; // 1D integer array
+    int index = 0;
+
+    while (index < 4) { // while loop
+        numbers[index++] = index;
+    }
+
+    int total = 0;
+    int arraySize = 4;
+    index = 0;
+    do { // do-while loop
+        total = total + numbers[index++];
+    } while (index < arraySize);
+
+    int matrix[arraySize][arraySize];
+
+    int row = 0, col = 0, value = 10;
+
+    for (row = 0; row < arraySize; row++) {
+        for (col = 0; col < arraySize; col++) {
+            matrix[row][col] = value++;
+        }
+    }
+
+    int submatrix[arraySize][arraySize];
+    generateSubmatrix(matrix, submatrix, 0, 0, arraySize);
+
     return 0;
 }
