@@ -270,9 +270,9 @@ bool typecheck(symbol* &s1, symbol* &s2) {
 
     if(typecheck(t1, t2))
         return true;
-    else if(s1 = convType(s1, t2->base))
+    else if(s1 == convType(s1, t2->base))
         return true;
-    else if(s2 = convType(s2, t1->base))
+    else if(s2 == convType(s2, t1->base))
         return true;
     else
         return false;
