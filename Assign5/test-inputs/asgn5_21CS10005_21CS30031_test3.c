@@ -1,50 +1,38 @@
-// Arrays (multidimensional), loops and nested loops
+// Declarations (variables(int, float, char), 1D array, 2D array, functions) and arithmetic operations
 
-int N = 4;
+// Global declarations
+float pi = 3.14159265;
+char grade;	
+int number1, number2, result1, result2, quotient, remainder;
+int myArray[5];                   // 1D array declaration
+float matrix[3][3];               // 2D array declaration
+int age = 30, *ptr, temperature;   // pointer declaration
 
-void getCF (int mat[N][N], int temp[N][N], int p, int q, int n) {
-    int i = 0, j = 0, row = 0, col = 0;
- 
-    for (row = 0; row < n; row++) {                       // nested for loop
-        for (col = 0; col < n; col++) {
-            if (row != p && col != q) {
-                temp[i][j++] = mat[row][col];
-            }
-            if (j == n - 1) {
-                j = 0;
-                i++;
-            }
-        }
-    }
+void printMessage (int num, float val) {
+    val = (float)(num + 42);
     return;
 }
 
-int main() {
-    int p[5];                                   // 1D integer array
-    int i = 0;
+int main () {
+    // Variable Declaration
+    int apples = 10;
+    int bananas = 3;
+    char initial = 'M', grade = 'A';  // character definitions
 
-    while (i < 5) {                             // while loop
-        p[i++] = i; 
-    }
+    // Arithmetic Operations
+    number1 = apples + bananas;
+    number2 = apples - bananas;
+    result1 = apples * bananas;
+    result2 = apples / bananas;
+    quotient = apples % bananas;
+    remainder = apples & bananas;
+    grade = grade | 'B';
 
-    int sum = 0, n = 5;
-    i = 0;
-    do {                                        // do-while loop
-        sum = sum + p[i++];
-    } while (i < n);
+    bananas = number1 << 2;
+    apples = number2 >> 1;
 
-    int mat[N][N];
-
-    int x = 0, y = 0, val = 20;
-
-    for (x = 0; x < N; x++) {
-        for (y = 0; y < N; y++) {
-            mat[x][y] = val++;
-        }
-    }
-
-    int cofactor[N][N];
-    getCF(mat, cofactor, 0, 0, N);
+    // Call a function
+    printMessage(apples, pi);
 
     return 0;
 }
