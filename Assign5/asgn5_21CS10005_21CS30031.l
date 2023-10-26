@@ -1,5 +1,6 @@
 /* Declarations */
 %{
+    #include <stdio.h>
     #include "asgn5_21CS10005_21CS30031_translator.h"
     #include "asgn5_21CS10005_21CS30031.tab.h"
 %}
@@ -36,13 +37,22 @@ S_CHAR_SEQ      {S_CHAR}+
 LITERAL         \"({S_CHAR_SEQ}?)\"
 
 /* Whitespace recognition */
-WHITE_SPACE     [  \t]
-NEWLINE        \n
+WHITE_SPACE     [  \t\n]
 
 
 /* Definitions */
 /* Keywords, Identifiers, Constants, Literals, Punctuators */
 %%
+"//"                        {BEGIN(SINGLE_LINE_COMM);}
+<SINGLE_LINE_COMM>.         {}
+<SINGLE_LINE_COMM>\n        {BEGIN(INITIAL);}
+<SINGLE_LINE_COMM><<EOF>>   {BEGIN(INITIAL);}
+
+"/*"                        {BEGIN(MULTI_LINE_COMM);}
+<MULTI_LINE_COMM>"*/"       {BEGIN(INITIAL);}
+<MULTI_LINE_COMM>.          {}
+<MULTI_LINE_COMM>\n         {}
+
 "auto"                      {return AUTO;}
 "enum"                      {return ENUM;}
 "restrict"                  {return RESTRICT;}
@@ -80,24 +90,6 @@ NEWLINE        \n
 "else"                      {return ELSE;}
 "register"                  {return REGISTER;}
 "union"                     {return UNION;}
-
-{IDENTIFIER}                {yylval.symb = currentSymbolTable->lookup(yytext); return IDENTIFIER;}
-{CONSTANT_INT}              {yylval.iValue = atoi(yytext) ;return CONSTANT_INT;}
-{CONSTANT_FLOAT}            {yylval.sValue = yytext; return CONSTANT_FLOAT;}
-{CONSTANT_CHAR}             {yylval.sValue = yytext ;return CONSTANT_CHAR;}
-{LITERAL}                   {yylval.sValue = yytext ;return LITERAL;}
-{WHITE_SPACE}               {}
-{NEWLINE}                   {}
-
-"//"                        {BEGIN(SINGLE_LINE_COMM);}
-<SINGLE_LINE_COMM>.         {}
-<SINGLE_LINE_COMM>\n        {BEGIN(INITIAL);}
-<SINGLE_LINE_COMM><<EOF>>   {BEGIN(INITIAL);}
-
-"/*"                        {BEGIN(MULTI_LINE_COMM);}
-<MULTI_LINE_COMM>"*/"       {BEGIN(INITIAL);}
-<MULTI_LINE_COMM>.          {}
-<MULTI_LINE_COMM>\n         {}
 
 "("                         {return PARANTHESIS_OPEN;}
 ")"                         {return PARANTHESIS_CLOSE;}
@@ -146,5 +138,12 @@ NEWLINE        \n
 "^="                        {return XOR_ASSIGN;}
 "|="                        {return OR_ASSIGN;}
 "#"                         {return HASH;}
-.                           {return INVALID_TOKEN;}
+
+
+{IDENTIFIER}                {yylval.symb = currentSymbolTable->lookup(yytext); return IDENTIFIER;}
+{CONSTANT_INT}              {yylval.iValue = atoi(yytext) ;return CONSTANT_INT;}
+{CONSTANT_FLOAT}            {yylval.sValue = yytext; return CONSTANT_FLOAT;}
+{CONSTANT_CHAR}             {yylval.sValue = yytext ;return CONSTANT_CHAR;}
+{LITERAL}                   {yylval.sValue = yytext ;return LITERAL;}
+{WHITE_SPACE}               {}
 %%

@@ -2,7 +2,7 @@ BASE=asgn5_21CS10005_21CS30031
 DIR=./test-outputs
 
 run: lex.yy.o $(BASE).tab.o $(BASE)_translator.o
-	g++ lex.yy.o $(BASE).tab.o $(BASE)_translator.o
+	g++ lex.yy.o $(BASE).tab.o $(BASE)_translator.o -lfl
 
 $(BASE)_translator.o: $(BASE)_translator.h $(BASE)_translator.cxx
 	g++ -c $(BASE)_translator.h
@@ -30,6 +30,7 @@ test: a.out
 	mkdir -p $(DIR)
 	@echo "\nTest Inputs are in ./test-inputs. Running on test files.\n"
 	./a.out < test-inputs/$(BASE)_test1.c > test-outputs/$(BASE)_quads1.out
+	./a.out < test-inputs/$(BASE)_test3.c > test-outputs/$(BASE)_quads3.out
 	./a.out < test-inputs/$(BASE)_test2.c > test-outputs/$(BASE)_quads2.out
 	@echo "\nTest outputs generated and written to ./test-outputs.\n"
 

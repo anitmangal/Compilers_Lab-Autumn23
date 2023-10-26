@@ -1,8 +1,8 @@
 // Function calls and conditional statements (ternary and if-else)
 
 int max (int x, int y) {
-    int ans;
-    if (x > y)                      // if-else
+    int ans = 0, xtemp = 0;
+    if (x > 0)                      // if-else
         ans = x;
     else
         ans = y;
@@ -14,8 +14,8 @@ int max (int x, int y) {
 
 
 int min (int x, int y) {
-    int ans;
-    ans = x > y ? y:x;              // ternary
+    int ans = y;
+    // ans = x > y ? y:x;              // ternary
     return ans;
 }
 
@@ -27,7 +27,7 @@ void print (char *ch) {
 void print_greater (int m, int n) {
     char greater_m[] = "m > n";
     char greater_n[] = "n > m";
-    m > n ? print(greater_m) : print(greater_n);
+    // m > n ? print(greater_m) : print(greater_n);
     return;
 }
 

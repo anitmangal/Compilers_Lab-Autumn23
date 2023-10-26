@@ -7,24 +7,23 @@ using namespace std;
 
 /* Sizes for data types as changeable parameters. */
 #define sizeof_void 0
-#define sizeof_func 0
 #define sizeof_char 1
 #define sizeof_int 4
 #define sizeof_float 8
 #define sizeof_pointer 4
 
 /* Forward declarations. */
-struct symbol;   // Symbol Table Record
-struct symbolType;   // Type of a symbol
+class symbol;   // Symbol Table Record
+class symbolType;   // Type of a symbol
 class symbolTable;  // Symbol Table
-struct quad; // Quad to store TAC
+class quad; // Quad to store TAC
 class quadArray;    // List of Quads
 
 /* Global Variables */
 extern symbol* currentSymbol;   // Points to current symbol
 extern symbolTable* currentSymbolTable; // Points to current symbol table
 extern symbolTable* globalSymbolTable; // Points to global symbol table
-extern quadArray* quadTable;   // Points to quad table
+extern quadArray quadTable;   // Points to quad table
 extern int SymbolTableCount;  // Count of symbol tables
 extern string blockName;   // Name of current block
 
@@ -32,7 +31,8 @@ extern string blockName;   // Name of current block
 extern int yyparse();
 extern char* yytext;
 
-struct symbol {
+class symbol {
+    public:
     string name;    // Name of symbol
     symbolType* type;   // Type of symbol
     string initValue;   // Initial value of symbol
@@ -45,7 +45,8 @@ struct symbol {
 };
 
 
-struct symbolType {
+class symbolType {
+    public:
     string base;   // Base type of symbol
     int width; // Width of symbol, 1 by default. Size for arrays
     symbolType* arrType;   // Array type of symbol
@@ -60,7 +61,7 @@ class symbolTable {
     list<symbol> table;    // List of symbols in symbol table
     symbolTable* parent;    // Parent symbol table
 
-    symbolTable(string name_);  // Constructor
+    symbolTable(string name_ = "NULL");  // Constructor
 
     symbol* lookup(string name);    // Lookup for symbol in symbol table
     static symbol* gentemp(symbolType* type_, string initValue_ = "NULL"); // Generate temporary symbol
@@ -68,15 +69,16 @@ class symbolTable {
     void print();   // Print symbol table
 };
 
-struct quad {
+class quad {
+    public:
     string opcode; // Opcode of quad
     string arguement1;  // First argument of quad
     string arguement2;  // Second argument of quad
     string result; // Result of quad
 
-    quad(string res_, string arg1_, string op_, string arg2_ = ""); // Constructor for string argument
-    quad(string res_, int arg1_, string op_, string arg2_ = ""); // Constructor for int argument
-    quad(string res_, float arg1_, string op_, string arg2_ = ""); // Constructor for float argument
+    quad(string res_, string arg1_, string op_ = "=", string arg2_ = ""); // Constructor for string argument
+    quad(string res_, int arg1_, string op_ = "=", string arg2_ = ""); // Constructor for int argument
+    quad(string res_, float arg1_, string op_ = "=", string arg2_ = ""); // Constructor for float argument
 
     void print();   // Print quad
 };
@@ -94,22 +96,25 @@ void emit(string opcode, string res, float arg1, string arg2 = ""); // Float typ
 
 
 
-// Array struct for arrays and pointers
-struct A {
-    bool arrType; // Type of array. 0:array, 1:pointer
+// Array class for arrays and pointers
+class A {
+    public:
+    string arrType; // Type of array. arr or ptr
     symbol* addr;   // Base symbol of array in Symbol Table
     symbol* location; // To get address of array
     symbolType* type;   // Type of array stored in symbol table
 };
 
-// Statement struct for statements
-struct S {
+// Statement class for statements
+class S {
+    public:
     list <int> nextList;    // List of nexts
 };
 
-// Expression struct for expressions
-struct E {
-    bool exprType;    // Type of expression. 0:bool, 1:not bool
+// Expression class for expressions
+class E {
+    public:
+    string exprType;    // Type of expression. bool or not_bool
     symbol* addr; // Base symbol of expression in Symbol Table
     list <int> trueList;    // List of statements for true
     list <int> falseList;   // List of statements for false
@@ -117,9 +122,9 @@ struct E {
 };
 
 /* GLOBAL FUNCTIONS */
-list <int> makelist(int i); // Make a new list with i as the only element, index of current quad
-list <int> merge(list <int> &p1, list <int> &p2); // Merge two lists, return merged list
-void backpatch(list <int> &p, int i); // Backpatch list p with i, update quad array
+list<int> makelist(int i); // Make a new list with i as the only element, index of current quad
+list<int> merge(list<int> &p1, list <int> &p2); // Merge two lists, return merged list
+void backpatch(list<int> p, int i); // Backpatch list p with i, update quad array
 bool typecheck(symbolType* t1, symbolType* t2); // Check if types t1 and t2 are compatible (called by typecheck(symbol, symbol) to check types of symbols and compatible types)
 symbol* convType(symbol* s, string t); // Convert type of symbol s to t, which calls
 

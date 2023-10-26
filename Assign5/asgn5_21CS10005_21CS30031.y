@@ -1,5 +1,6 @@
 %{
     #include <iostream>
+    #include "asgn5_21CS10005_21CS30031_translator.h"
     using namespace std;
     extern int yylex(); // in lex.yy.c : Lexical analyser
     extern int yylineno; // in lex.yy.c : Line number
@@ -7,10 +8,6 @@
     void yyerror(string s);  // in lex.yy.c : Error function
     extern string data_type; // in asgn5_21CS10005_21CS30031_translator.cxx : Stores the data type of the current variable
 %}
-
-%code requires{
-    #include "asgn5_21CS10005_21CS30031_translator.h"
-}
 
 %union {
     int iValue;     // Integer value
@@ -48,7 +45,7 @@
 /* Types for all non-terminals */
 %type <unary_op> unary_operator // Unary operator non-terminals
 %type <param_count> argument_expression_list argument_expression_list_opt   // Number of parameters non-terminals
-%type <expr> expression expression_opt primary_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression expression_statement   // Expression type non-terminals
+%type <expr> expression primary_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression expression_statement   // Expression type non-terminals
 %type <statem> statement labeled_statement compound_statement selection_statement iteration_statement jump_statement loop_statement block_item block_item_list block_item_list_opt  // Statement type non-terminals
 %type <symbType> pointer   // Pointer non-terminal
 %type <symb> constant initializer direct_declarator init_declarator declarator  // Symbol non-terminals
@@ -58,6 +55,23 @@
 
 %%
 
+
+primary_expression  : IDENTIFIER    {
+                        $$ = new E();  // New expression
+                        $$->addr = $1;      // Store pointer in Symbol Table
+                        $$->exprType = "not_bool";   // Non bool expression
+                    }
+                    | constant      {
+                        $$ = new E();  // New expression
+                        $$->addr = $1;      // Store pointer in Symbol Table
+                    }
+                    | LITERAL       {
+                        $$ = new E();  // New expression
+                        $$->addr = symbolTable::gentemp(new symbolType("ptr"), $1); // Create new temp with type ptr and store value
+                        $$->addr->type->arrType = new symbolType("char");
+                    }
+                    | PARANTHESIS_OPEN expression PARANTHESIS_CLOSE { $$ = $2; } // Assignment
+                    ;
 
 constant            : CONSTANT_INT  {
                         $$ = symbolTable::gentemp(new symbolType("int"), convIntToStr($1)); // Create new temp with type int and store value
@@ -73,37 +87,20 @@ constant            : CONSTANT_INT  {
                     }
                     ;
 
-primary_expression  : IDENTIFIER    {
-                        $$ = new E();  // New expression
-                        $$->addr = $1;      // Store pointer in Symbol Table
-                        $$->exprType = 1;   // Non bool expression
-                    }
-                    | constant      {
-                        $$ = new E();  // New expression
-                        $$->addr = $1;      // Store pointer in Symbol Table
-                    }
-                    | LITERAL       {
-                        $$ = new E();  // New expression
-                        $$->addr = symbolTable::gentemp(new symbolType("ptr"), $1); // Create new temp with type ptr and store value
-                        $$->addr->type->arrType = new symbolType("char");
-                    }
-                    | PARANTHESIS_OPEN expression PARANTHESIS_CLOSE { $$ = $2; } // Assignment
-                    ;
-
 postfix_expression  : primary_expression {
                         $$ = new A();   // New Array
-                        $$->addr = $1->addr;   // Store pointer in Symbol Table
+                        $$->location = $1->addr;   // Store pointer in Symbol Table
                         $$->type = $1->addr->type;  // Update type
-                        $$->location = $$->addr;   // Update location
+                        $$->addr = $$->location;   // Update location
                     }
                     | postfix_expression SQ_BRACKET_OPEN expression SQ_BRACKET_CLOSE {
                         $$ = new A();   // New Array
                         $$->type = $1->type->arrType;   // Update type
-                        $$->addr = $1->addr;  // Copy the incoming symbol
-                        $$->location = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in location which will have the address of the array element
-                        $$->arrType = 0; // A type is array
+                        $$->location = $1->location;  // Copy the incoming symbol
+                        $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in location which will have the address of the array element
+                        $$->arrType = "arr"; // A type is array
 
-                        if ($1->arrType == 0) { // Array of array
+                        if ($1->arrType == "arr") { // Array of array
                             symbol* temp = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in temp
                             int sz = sizeOfType($$->type);  // Get size of type of current
                             emit("*", temp->name, $3->addr->name, convIntToStr(sz)); // temp = \$ 3 * sz
@@ -116,22 +113,22 @@ postfix_expression  : primary_expression {
                     }
                     | postfix_expression PARANTHESIS_OPEN argument_expression_list_opt PARANTHESIS_CLOSE {
                         $$ = new A();   // Make new array
-                        $$->addr = symbolTable::gentemp($1->type); // Get return type
-                        emit("call", $$->addr->name, $1->addr->name, convIntToStr($3)); // call \$ \$->Array->name \$ 3->param_count
+                        $$->location = symbolTable::gentemp($1->type); // Get return type
+                        emit("call", $$->location->name, $1->location->name, convIntToStr($3)); // call \$ \$->Array->name \$ 3->param_count
                     }
                     | postfix_expression PERIOD IDENTIFIER {}
                     | postfix_expression ARROW IDENTIFIER {}
                     | postfix_expression INCREMENT {
                         $$ = new A();   // Make new array
-                        $$->addr = symbolTable::gentemp($1->addr->type);    // Make new temp with type of current
-                        emit("=", $$->addr->name, $1->addr->name);    // \$ \$->Array->name = \$ 1->Array->name
-                        emit("+", $1->addr->name, $1->addr->name, "1");   // \$ 1->Array->name = \$ 1->Array->name + 1
+                        $$->location = symbolTable::gentemp($1->location->type);    // Make new temp with type of current
+                        emit("=", $$->location->name, $1->location->name);    // \$ \$->Array->name = \$ 1->Array->name
+                        emit("+", $1->location->name, $1->location->name, "1");   // \$ 1->Array->name = \$ 1->Array->name + 1
                     }
                     | postfix_expression DECREMENT {
                         $$ = new A();   // Make new array
-                        $$->addr = symbolTable::gentemp($1->addr->type);    // Make new temp with type of current
-                        emit("=", $$->addr->name, $1->addr->name);    // \$ \$->Array->name = \$ 1->Array->name
-                        emit("-", $1->addr->name, $1->addr->name, "1");   // \$ 1->Array->name = \$ 1->Array->name - 1
+                        $$->location = symbolTable::gentemp($1->location->type);    // Make new temp with type of current
+                        emit("=", $$->location->name, $1->location->name);    // \$ \$->Array->name = \$ 1->Array->name
+                        emit("-", $1->location->name, $1->location->name, "1");   // \$ 1->Array->name = \$ 1->Array->name - 1
                     }
                     | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE CURLY_BRACKET_OPEN initializer_list CURLY_BRACKET_CLOSE {}
                     | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE CURLY_BRACKET_OPEN initializer_list COMMA CURLY_BRACKET_CLOSE {}
@@ -153,30 +150,30 @@ argument_expression_list    : assignment_expression {
 
 unary_expression    : postfix_expression { $$ = $1; } // Pass the expression
                     | INCREMENT unary_expression {
-                        emit("+", $2->addr->name, $2->addr->name, "1");   // \$ 2->Array->name = \$ 2->Array->name + 1
+                        emit("+", $2->location->name, $2->location->name, "1");   // \$ 2->Array->name = \$ 2->Array->name + 1
                         $$ = $2;
                     }
                     | DECREMENT unary_expression {
-                        emit("-", $2->addr->name, $2->addr->name, "1");   // \$ 2->Array->name = \$ 2->Array->name - 1
+                        emit("-", $2->location->name, $2->location->name, "1");   // \$ 2->Array->name = \$ 2->Array->name - 1
                         $$ = $2;
                     }
                     | unary_operator cast_expression {
                         $$ = new A();
                         if ($1 == '&') {
-                            $$->addr = symbolTable::gentemp(new symbolType("ptr")); // Create new temp with type ptr and store in addr
-                            $$->addr->type->arrType = $2->addr->type;
-                            emit("= &", $$->addr->name, $2->addr->name); // \$ \$->Array->name = & \$ 2->Array->name
+                            $$->location = symbolTable::gentemp(new symbolType("ptr")); // Create new temp with type ptr and store in addr
+                            $$->location->type->arrType = $2->location->type;
+                            emit("= &", $$->location->name, $2->location->name); // \$ \$->Array->name = & \$ 2->Array->name
                         }
                         else if ($1 == '*') {
-                            $$->arrType = 1; // Pointer type
-                            $$->location = symbolTable::gentemp($2->addr->type->arrType); // Create new temp with type of current and store in location
-                            $$->addr = $2->addr;    // Copy the incoming symbol
-                            emit("= *", $$->location->name, $2->addr->name); // \$ \$->location->name = * \$ 2->Array->name
+                            $$->arrType = "ptr"; // Pointer type
+                            $$->addr = symbolTable::gentemp($2->location->type->arrType); // Create new temp with type of current and store in location
+                            $$->location = $2->location;    // Copy the incoming symbol
+                            emit("= *", $$->addr->name, $2->location->name); // \$ \$->location->name = * \$ 2->Array->name
                         }
                         else if ($1 == '+') $$ = $2;
                         else if ($1 == '-' || $1 == '~' || $1 == '!') {
-                            $$->addr = symbolTable::gentemp(new symbolType($2->addr->type->base)); // Create new temp with type of current and store in addr
-                            emit("= "+$1, $$->addr->name, $2->addr->name); // \$ \$->Array->name = - \$ 2->Array->name
+                            $$->location = symbolTable::gentemp(new symbolType($2->location->type->base)); // Create new temp with type of current and store in addr
+                            emit("= "+$1, $$->location->name, $2->location->name); // \$ \$->Array->name = - \$ 2->Array->name
                         }
                     }
                     | SIZEOF unary_expression {}
@@ -194,46 +191,46 @@ unary_operator      : AMPERSAND {$$ = '&';}
 cast_expression     : unary_expression {$$ =  $1;} 
                     | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE cast_expression {
                         $$ = new A();
-                        $$->addr = convType($4->addr, data_type);
+                        $$->location = convType($4->location, data_type);
                     }
                     ;
 
 multiplicative_expression : cast_expression {
                             $$ = new E(); // new expression
-                            if ($1->arrType == 0) {
+                            if ($1->arrType == "arr") {
                                 $$->addr = symbolTable::gentemp($1->addr->type); // Create new temp with type of current and store in addr
-                                emit("=[]", $$->addr->name, $1->addr->name, $1->location->name); // \$ \$->Array->name = \$ 1->Array->name [ \$ 1->location->name ]
+                                emit("=[]", $$->addr->name, $1->location->name, $1->addr->name); // \$ \$->Array->name = \$ 1->Array->name [ \$ 1->location->name ]
                             }
-                            else if($1->arrType == 1) {
-                                $$->addr = $1->location; // Copy the incoming symbol
+                            else if($1->arrType == "ptr") {
+                                $$->addr = $1->addr; // Copy the incoming symbol
                             }
-                            else $$->addr = $1->addr; // Copy the incoming symbol
+                            else $$->addr = $1->location; // Copy the incoming symbol
                           }
                           | multiplicative_expression ASTERISK cast_expression {
-                            if (typecheck($1->addr, $3->addr)) {
+                            if (typecheck($1->addr, $3->location)) {
                                 $$ = new E();
                                 $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
-                                emit("*", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name * \$ 3->Array->name
+                                emit("*", $$->addr->name, $1->addr->name, $3->location->name); // \$ \$->Array->name = \$ 1->Array->name * \$ 3->Array->name
                             }
                             else {
                                 yyerror("Type mismatch");
                             }
                           }
                           | multiplicative_expression SLASH cast_expression {
-                            if (typecheck($1->addr, $3->addr)) {
+                            if (typecheck($1->addr, $3->location)) {
                                 $$ = new E();
                                 $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
-                                emit("/", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name / \$ 3->Array->name
+                                emit("/", $$->addr->name, $1->addr->name, $3->location->name); // \$ \$->Array->name = \$ 1->Array->name / \$ 3->Array->name
                             }
                             else {
                                 yyerror("Type mismatch");
                             }
                           }
                           | multiplicative_expression PERCENT cast_expression {
-                            if (typecheck($1->addr, $3->addr)) {
+                            if (typecheck($1->addr, $3->location)) {
                                 $$ = new E();
                                 $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
-                                emit("%", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name % \$ 3->Array->name
+                                emit("%", $$->addr->name, $1->addr->name, $3->location->name); // \$ \$->Array->name = \$ 1->Array->name % \$ 3->Array->name
                             }
                             else {
                                 yyerror("Type mismatch");
@@ -291,10 +288,10 @@ relational_expression   : shift_expression { $$ = $1; }
                         | relational_expression LESS_THAN shift_expression {
                             if (typecheck($1->addr, $3->addr)) {
                                 $$ = new E();
-                                $$->exprType = 0;   // Boolean type
+                                $$->exprType = "bool";   // Boolean type
                                 $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                                $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
                                 emit("<", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name < \$ 3->Array->name
-                                $$->falseList = makelist(nextinstr()); // Make list of next instruction
                                 emit("goto", ""); // goto
                             }
                             else {
@@ -304,10 +301,10 @@ relational_expression   : shift_expression { $$ = $1; }
                         | relational_expression GREATER_THAN shift_expression {
                             if (typecheck($1->addr, $3->addr)) {
                                 $$ = new E();
-                                $$->exprType = 0;   // Boolean type
+                                $$->exprType = "bool";   // Boolean type
                                 $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                                $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
                                 emit(">", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name > \$ 3->Array->name
-                                $$->falseList = makelist(nextinstr()); // Make list of next instruction
                                 emit("goto", ""); // goto
                             }
                             else {
@@ -317,10 +314,10 @@ relational_expression   : shift_expression { $$ = $1; }
                         | relational_expression LESS_THAN_EQUAL shift_expression {
                             if (typecheck($1->addr, $3->addr)) {
                                 $$ = new E();
-                                $$->exprType = 0;   // Boolean type
+                                $$->exprType = "bool";   // Boolean type
                                 $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                                $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
                                 emit("<=", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name <= \$ 3->Array->name
-                                $$->falseList = makelist(nextinstr()); // Make list of next instruction
                                 emit("goto", ""); // goto
                             }
                             else {
@@ -330,10 +327,10 @@ relational_expression   : shift_expression { $$ = $1; }
                         | relational_expression GREATER_THAN_EQUAL shift_expression {
                             if (typecheck($1->addr, $3->addr)) {
                                 $$ = new E();
-                                $$->exprType = 0;   // Boolean type
+                                $$->exprType = "bool";   // Boolean type
                                 $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                                $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
                                 emit(">=", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name >= \$ 3->Array->name
-                                $$->falseList = makelist(nextinstr()); // Make list of next instruction
                                 emit("goto", ""); // goto
                             }
                             else {
@@ -348,10 +345,10 @@ equality_expression : relational_expression {$$ = $1;} // Pass
                             convBoolToInt($1);
                             convBoolToInt($3);
                             $$ = new E();
-                            $$->exprType = 0;   // Boolean type
+                            $$->exprType = "bool";   // Boolean type
                             $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                            $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
                             emit("==", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name == \$ 3->Array->name
-                            $$->falseList = makelist(nextinstr()); // Make list of next instruction
                             emit("goto", ""); // goto
                         }
                         else {
@@ -363,10 +360,10 @@ equality_expression : relational_expression {$$ = $1;} // Pass
                             convBoolToInt($1);
                             convBoolToInt($3);
                             $$ = new E();
-                            $$->exprType = 0;   // Boolean type
+                            $$->exprType = "bool";   // Boolean type
                             $$->trueList = makelist(nextinstr()); // Make list of next instruction
+                            $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
                             emit("!=", "", $1->addr->name, $3->addr->name); // if \$ 1->Array->name != \$ 3->Array->name
-                            $$->falseList = makelist(nextinstr()); // Make list of next instruction
                             emit("goto", ""); // goto
                         }
                         else {
@@ -381,7 +378,7 @@ AND_expression      : equality_expression {$$ = $1;} // Pass
                             convBoolToInt($1);
                             convBoolToInt($3);
                             $$ = new E();
-                            $$->exprType = 1; // Not boolean
+                            $$->exprType = "not_bool"; // Not boolean
                             $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
                             emit("&", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name & \$ 3->Array->name
                         }
@@ -397,7 +394,7 @@ exclusive_OR_expression : AND_expression {$$ = $1;} // Pass
                                 convBoolToInt($1);
                                 convBoolToInt($3);
                                 $$ = new E();
-                                $$->exprType = 1; // Not boolean
+                                $$->exprType = "not_bool"; // Not boolean
                                 $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
                                 emit("^", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name ^ \$ 3->Array->name
                             }
@@ -413,7 +410,7 @@ inclusive_OR_expression : exclusive_OR_expression {$$ = $1;} // Pass
                                 convBoolToInt($1);
                                 convBoolToInt($3);
                                 $$ = new E();
-                                $$->exprType = 1; // Not boolean
+                                $$->exprType = "not_bool"; // Not boolean
                                 $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
                                 emit("|", $$->addr->name, $1->addr->name, $3->addr->name); // \$ \$->Array->name = \$ 1->Array->name | \$ 3->Array->name
                             }
@@ -428,7 +425,7 @@ logical_AND_expression  : inclusive_OR_expression {$$ = $1;} // Pass
                             convBoolToInt($1);
                             convBoolToInt($4);
                             $$ = new E();
-                            $$->exprType = 0;   // Boolean type
+                            $$->exprType = "bool";   // Boolean type
                             backpatch($1->trueList, $3); // Backpatch
                             $$->trueList = $4->trueList; // Copy true list
                             $$->falseList = merge($1->falseList, $4->falseList); // Merge false lists
@@ -440,17 +437,12 @@ logical_OR_expression   : logical_AND_expression {$$ = $1;} // Pass
                             convBoolToInt($1);
                             convBoolToInt($4);
                             $$ = new E();
-                            $$->exprType = 0;   // Boolean type
+                            $$->exprType = "bool";   // Boolean type
                             backpatch($1->falseList, $3); // Backpatch
                             $$->falseList = $4->falseList; // Copy false list
                             $$->trueList = merge($1->trueList, $4->trueList); // Merge true lists
                         }
                         ;
-
-/* AUGMENTED EMPTY NON-TERMINALS */
-M: %empty { $$ = nextinstr(); } // Has next instruction for backpatching
-
-N: %empty { $$ = new S(); $$->nextList = makelist(nextinstr()); emit("goto", ""); } // Has next list for control flow
 
 conditional_expression  : logical_OR_expression {$$ = $1;} // Pass
                         | logical_OR_expression N QUESTION M expression N COLON M conditional_expression {  // M and N are augmented non-terminals
@@ -472,16 +464,21 @@ conditional_expression  : logical_OR_expression {$$ = $1;} // Pass
                         }
                         ;
 
+/* AUGMENTED EMPTY NON-TERMINALS */
+M: %empty { $$ = nextinstr(); } // Has next instruction for backpatching
+
+N: %empty { $$ = new S(); $$->nextList = makelist(nextinstr()); emit("goto", ""); } // Has next list for control flow
+
 assignment_expression   : conditional_expression {$$ = $1;} // Pass
                         | unary_expression assignment_operator assignment_expression {
-                            if ($1->arrType == 0) { // convert array
+                            if ($1->arrType == "arr") { // convert array
                                 $3->addr = convType($3->addr, $1->type->base);
-                                emit("[]=", $1->addr->name, $1->location->name, $3->addr->name); // \$ 1->Array->name [ \$ 1->location->name ] = \$ 3->Array->name
+                                emit("[]=", $1->location->name, $1->addr->name, $3->addr->name); // \$ 1->Array->name [ \$ 1->location->name ] = \$ 3->Array->name
                             }
-                            else if ($1->arrType == 1) emit("*=", $1->addr->name, $3->addr->name);  // Pointer type
+                            else if ($1->arrType == "ptr") emit("*=", $1->location->name, $3->addr->name);  // Pointer type
                             else {
-                                $3->addr = convType($3->addr, $1->addr->type->base);
-                                emit("=", $1->addr->name, $3->addr->name); // \$ 1->Array->name = \$ 3->Array->name
+                                $3->addr = convType($3->addr, $1->location->type->base);
+                                emit("=", $1->location->name, $3->addr->name); // \$ 1->Array->name = \$ 3->Array->name
                             }
                             $$ = $3;
                         }
@@ -509,22 +506,19 @@ constant_expression : conditional_expression {}
 
 
 
-declaration : declaration_specifiers init_declarator_list_opt SEMICOLON {}
+declaration : declaration_specifiers init_declarator_list SEMICOLON {}
+            | declaration_specifiers SEMICOLON {}
             ;
 
-init_declarator_list_opt    : init_declarator_list {}
-                            | %empty {}
-                            ;
-
-declaration_specifiers  : storage_class_specifier declaration_specifiers_opt {}
-                        | type_specifier declaration_specifiers_opt {}
-                        | type_qualifier declaration_specifiers_opt {}
-                        | function_specifier declaration_specifiers_opt {}
+declaration_specifiers  : storage_class_specifier declaration_specifiers {}
+                        | storage_class_specifier {}
+                        | type_specifier declaration_specifiers {}
+                        | type_specifier {}
+                        | type_qualifier declaration_specifiers {}
+                        | type_qualifier {}
+                        | function_specifier declaration_specifiers {}
+                        | function_specifier {}
                         ;
-
-declaration_specifiers_opt  : declaration_specifiers {}
-                            | %empty{}
-                            ;
 
 init_declarator_list: init_declarator_list COMMA init_declarator {}
                     | init_declarator {}
@@ -606,7 +600,9 @@ direct_declarator   : IDENTIFIER {
                         currentSymbol = $1; // Update current symbol
                     }
                     | PARANTHESIS_OPEN declarator PARANTHESIS_CLOSE { $$ = $2;} // Assignment
-                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt assignment_expression SQ_BRACKET_CLOSE {
+                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list assignment_expression SQ_BRACKET_CLOSE {}
+                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list SQ_BRACKET_CLOSE {} 
+                    | direct_declarator SQ_BRACKET_OPEN assignment_expression SQ_BRACKET_CLOSE {
                         symbolType* t = $1->type;
                         symbolType* prev = NULL;
                         while(t->base == "arr") {
@@ -614,17 +610,17 @@ direct_declarator   : IDENTIFIER {
                             t = t->arrType;
                         }
                         if (prev == NULL) {
-                            int temp = atoi($4->addr->initValue.c_str());   // Init value
+                            int temp = atoi($3->addr->initValue.c_str());   // Init value
                             symbolType* tp = new symbolType("arr", $1->type, temp);   // Create new array type
                             $$ = $1->update(tp);    // Update
                         }
                         else {
-                            int temp = atoi($4->addr->initValue.c_str());   // Init value
+                            int temp = atoi($3->addr->initValue.c_str());   // Init value
                             prev->arrType = new symbolType("arr", t, temp);  // Create new array type
                             $$ = $1->update($1->type);  // Update
                         }
                     }
-                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt SQ_BRACKET_CLOSE {
+                    | direct_declarator SQ_BRACKET_OPEN SQ_BRACKET_CLOSE {
                         symbolType* t = $1->type;
                         symbolType* prev = NULL;
                         while(t->base == "arr") {
@@ -640,9 +636,11 @@ direct_declarator   : IDENTIFIER {
                             $$ = $1->update($1->type);  // Update
                         }
                     }
-                    | direct_declarator SQ_BRACKET_OPEN STATIC type_qualifier_list_opt assignment_expression SQ_BRACKET_CLOSE {}
+                    | direct_declarator SQ_BRACKET_OPEN STATIC type_qualifier_list assignment_expression SQ_BRACKET_CLOSE {}
+                    | direct_declarator SQ_BRACKET_OPEN STATIC assignment_expression SQ_BRACKET_CLOSE {}
                     | direct_declarator SQ_BRACKET_OPEN type_qualifier_list STATIC assignment_expression SQ_BRACKET_CLOSE {}
-                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt ASTERISK SQ_BRACKET_CLOSE {}
+                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list ASTERISK SQ_BRACKET_CLOSE {}
+                    | direct_declarator SQ_BRACKET_OPEN ASTERISK SQ_BRACKET_CLOSE {}
                     | direct_declarator PARANTHESIS_OPEN change_table parameter_type_list PARANTHESIS_CLOSE {   // change_table non terminal is used to change the symbol table
                         currentSymbolTable->name = $1->name; // Update name
                         if ($1->type->base != "void") {
@@ -688,8 +686,8 @@ parameter_list  : parameter_declaration {}
                 | parameter_list COMMA parameter_declaration {}
                 ;
 
-parameter_declaration   : declaration_specifiers declarator {printf("parameter_declaration: declaration_specifiers declarator\n");}
-                        | declaration_specifiers {printf("parameter_declaration: declaration_specifiers\n");}
+parameter_declaration   : declaration_specifiers declarator {}
+                        | declaration_specifiers {}
                         ;
 
 identifier_list : IDENTIFIER {}
@@ -772,12 +770,9 @@ block_item  : declaration { $$ = new S(); }
             | statement { $$ = $1; }
             ;
 
-expression_statement    : expression_opt SEMICOLON { $$ = $1; }
+expression_statement    : expression SEMICOLON { $$ = $1; }
+                        | SEMICOLON { $$ = new E(); }
                         ;
-
-expression_opt  : expression { $$ = $1;}
-                | %empty { $$ = new E(); }
-                ;
 
 selection_statement : IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M statement N %prec THEN { // M, N and THEN augmented to help with control flow
                         backpatch($4->nextList, nextinstr());   // Backpatch to next instruction
@@ -785,7 +780,7 @@ selection_statement : IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M state
                         $$ = new S();
                         backpatch($3->trueList, $6);    // Backpatch to M
                         list<int> temp = merge($3->falseList, $7->nextList); // Merge false lists
-                        $$->nextList = merge(temp, $7->nextList); // Merge false lists
+                        $$->nextList = merge($8->nextList, temp); // Merge false lists
                     }
                     | IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M statement N ELSE M statement {
                         backpatch($4->nextList, nextinstr());   // Backpatch to next instruction
@@ -794,7 +789,7 @@ selection_statement : IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M state
                         backpatch($3->trueList, $6);    // Backpatch to M1
                         backpatch($3->falseList, $10);   // Backpatch to M2
                         list<int> temp = merge($7->nextList, $8->nextList); // Merge false lists
-                        $$->nextList = merge(temp, $11->nextList); // Merge false lists
+                        $$->nextList = merge($11->nextList, temp); // Merge false lists
                     }
                     | SWITCH PARANTHESIS_OPEN expression PARANTHESIS_CLOSE statement {}
                     ;
@@ -804,6 +799,16 @@ iteration_statement : WHILE W PARANTHESIS_OPEN X change_table M expression PARAN
                         convIntToBool($7);
                         backpatch($10->nextList, $6);   // Backpatch to M1
                         backpatch($7->trueList, $9);    // Backpatch to M2
+                        $$->nextList = $7->falseList;  // Copy false list
+                        emit("goto", convIntToStr($6)); // goto
+                        blockName = "";
+                        switchTable(currentSymbolTable->parent);
+                    }
+                    | WHILE W PARANTHESIS_OPEN X change_table M expression PARANTHESIS_CLOSE CURLY_BRACKET_OPEN M block_item_list_opt CURLY_BRACKET_CLOSE { // W, X, M and change_table are augmented non-terminals
+                        $$ = new S(); // new statement
+                        convIntToBool($7);
+                        backpatch($11->nextList, $6);   // Backpatch to M1
+                        backpatch($7->trueList, $10);    // Backpatch to M2
                         $$->nextList = $7->falseList;  // Copy false list
                         emit("goto", convIntToStr($6)); // goto
                         blockName = "";
@@ -826,6 +831,17 @@ iteration_statement : WHILE W PARANTHESIS_OPEN X change_table M expression PARAN
                         blockName = "";
                     }
                     | FOR F PARANTHESIS_OPEN X change_table declaration M expression_statement M expression N PARANTHESIS_CLOSE M loop_statement {  // F, X, M, N and change_table are augmented non-terminals
+                        $$ = new S();
+                        convIntToBool($8);
+                        backpatch($8->trueList, $13); // Backpatch to M3
+                        backpatch($11->nextList, $7); // Backpatch to M1
+                        backpatch($14->nextList, $9); // Backpatch to N
+                        emit("goto", convIntToStr($9)); // goto
+                        $$->nextList = $8->falseList;  // Copy false list
+                        blockName = "";
+                        switchTable(currentSymbolTable->parent);
+                    }
+                    | FOR F PARANTHESIS_OPEN X change_table expression_statement M expression_statement M expression N PARANTHESIS_CLOSE M loop_statement {  // F, X, M, N and change_table are augmented non-terminals
                         $$ = new S();
                         convIntToBool($8);
                         backpatch($8->trueList, $13); // Backpatch to M3

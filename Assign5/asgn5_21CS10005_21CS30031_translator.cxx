@@ -6,7 +6,7 @@ using namespace std;
 symbol* currentSymbol;
 symbolTable* currentSymbolTable;
 symbolTable* globalSymbolTable;
-quadArray* quadTable;
+quadArray quadTable;
 int SymbolTableCount;
 string blockName;
 
@@ -230,17 +230,17 @@ void quadArray::print() {
 // Overloaded emit functions
 void emit(string op, string result, string arguement1, string arguement2) {
     quad* q = new quad(result, arguement1, op, arguement2);
-    quadTable->array.push_back(*q);
+    quadTable.array.push_back(*q);
 }
 
 void emit(string op, string result, int arguement1, string arguement2) {
     quad* q = new quad(result, arguement1, op, arguement2);
-    quadTable->array.push_back(*q);
+    quadTable.array.push_back(*q);
 }
 
 void emit(string op, string result, float arguement1, string arguement2) {
     quad* q = new quad(result, arguement1, op, arguement2);
-    quadTable->array.push_back(*q);
+    quadTable.array.push_back(*q);
 }
 
 // Implementation of the makelist function
@@ -256,10 +256,10 @@ list<int> merge(list<int> &list1, list<int> &list2) {
 }
 
 // Implementation of the backpatch function
-void backpatch(list<int> &l, int address) {
+void backpatch(list<int> l, int address) {
     string str = convIntToStr(address);
     for(list<int>::iterator it = l.begin(); it != l.end(); it++) {
-        quadTable->array[*it].result = str;
+        quadTable.array[*it].result = str;
     }
 }
 
@@ -342,7 +342,7 @@ string convFloatToStr(float f) {
 
 // Implementation of the convIntToBool function
 E* convIntToBool(E* expr) {
-    if(expr->exprType != 0) {
+    if(expr->exprType != "bool") {
         expr->falseList = makelist(nextinstr());    // Add falselist for boolean expressions
         emit("==", expr->addr->name, "0");
         expr->trueList = makelist(nextinstr());     // Add truelist for boolean expressions
@@ -353,7 +353,7 @@ E* convIntToBool(E* expr) {
 
 // Implementation of the convBoolToInt function
 E* convBoolToInt(E* expr) {
-    if(expr->exprType == 0) {
+    if(expr->exprType == "bool") {
         expr->addr = symbolTable::gentemp(new symbolType("int"));
         backpatch(expr->trueList, nextinstr());
         emit("=", expr->addr->name, "true");
@@ -369,7 +369,7 @@ void switchTable(symbolTable* newTable) {
 }
 
 int nextinstr() {
-    return quadTable->array.size();
+    return quadTable.array.size();
 }
 
 int sizeOfType(symbolType* t) {
@@ -386,7 +386,7 @@ int sizeOfType(symbolType* t) {
     else if(t->base == "arr")
         return t->width * sizeOfType(t->arrType);
     else if(t->base == "func")
-        return sizeof_func;
+        return 0;
     else
         return -1;
 }
@@ -412,7 +412,7 @@ int main() {
 
     yyparse();
     globalSymbolTable->update();
-    quadTable->print();       // Print Three Address Code
+    quadTable.print();       // Print Three Address Code
     cout << endl;
     globalSymbolTable->print();      // Print symbol tables
 
