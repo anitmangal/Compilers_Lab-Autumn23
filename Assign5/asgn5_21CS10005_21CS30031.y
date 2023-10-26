@@ -172,9 +172,17 @@ unary_expression    : postfix_expression { $$ = $1; } // Pass the expression
                             emit("= *", $$->addr->name, $2->location->name); // unary = *unary1
                         }
                         else if ($1 == '+') $$ = $2;
-                        else if ($1 == '-' || $1 == '~' || $1 == '!') {
+                        else if ($1 == '-') {
                             $$->location = symbolTable::gentemp(new symbolType($2->location->type->base)); // Create new temp with type of current and store in addr
-                            emit("= "+$1, $$->location->name, $2->location->name); // unary = $1 unary1
+                            emit("= -", $$->location->name, $2->location->name); // unary = $1 unary1
+                        }
+                        else if ($1 == '~')  {
+                            $$->location = symbolTable::gentemp(new symbolType($2->location->type->base)); // Create new temp with type of current and store in addr
+                            emit("= ~", $$->location->name, $2->location->name); // unary = $1 unary1
+                        }
+                        else if ($1 == '!') {
+                            $$->location = symbolTable::gentemp(new symbolType($2->location->type->base)); // Create new temp with type of current and store in addr
+                            emit("= !", $$->location->name, $2->location->name); // unary = $1 unary1
                         }
                     }
                     | SIZEOF unary_expression {}
@@ -527,7 +535,7 @@ init_declarator_list: init_declarator_list COMMA init_declarator {}
 
 init_declarator : declarator {$$ = $1;} // Pass
                 | declarator ASSIGN initializer {
-                    if ($3->initValue != "NULL") $1->initValue = $3->initValue;
+                    if ($3->initValue != "") $1->initValue = $3->initValue;
                     emit("=", $1->name, $3->name);
                 }
                 ;
