@@ -1,22 +1,25 @@
 %{
     #include <iostream>
-    #include "asgn5_21CS10005_21CS30031_translator.h"
     using namespace std;
     extern int yylex(); // in lex.yy.c : Lexical analyser
     extern int yylineno; // in lex.yy.c : Line number
     extern char *yytext;    // in lex.yy.c : Identified lexeme
-    void yyerror(char *s);  // in lex.yy.c : Error function
-    extern string data_type; // in asgn5_21CS10005_21CS30031_translator.h : Stores the data type of the current variable
+    void yyerror(string s);  // in lex.yy.c : Error function
+    extern string data_type; // in asgn5_21CS10005_21CS30031_translator.cxx : Stores the data type of the current variable
 %}
+
+%code requires{
+    #include "asgn5_21CS10005_21CS30031_translator.h"
+}
 
 %union {
     int iValue;     // Integer value
     char *sValue;   // String value
-    symbol* symb;       // Symbol
-    symbolType* symbolType;   // Symbol type
-    E* expr;   // Expression
-    S* statem;  // Statement
-    A* arr; // Array
+    symbol *symb;       // Symbol
+    symbolType *symbType;   // Symbol type
+    E *expr;   // Expression
+    S *statem;  // Statement
+    A *arr; // Array
     int instr_ind;  // Keep track of instruction number
     char unary_op;  // Unary operator
     int param_count;   // Parameter count for functions
@@ -47,7 +50,7 @@
 %type <param_count> argument_expression_list argument_expression_list_opt   // Number of parameters non-terminals
 %type <expr> expression expression_opt primary_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression expression_statement   // Expression type non-terminals
 %type <statem> statement labeled_statement compound_statement selection_statement iteration_statement jump_statement loop_statement block_item block_item_list block_item_list_opt  // Statement type non-terminals
-%type <symbolType> pointer   // Pointer non-terminal
+%type <symbType> pointer   // Pointer non-terminal
 %type <symb> constant initializer direct_declarator init_declarator declarator  // Symbol non-terminals
 %type <arr> postfix_expression unary_expression cast_expression // Array non-terminals
 %type <instr_ind> M // Augmented non-terminal to help with backpatching by storing next instruction index
@@ -84,7 +87,7 @@ primary_expression  : IDENTIFIER    {
                         $$->addr = symbolTable::gentemp(new symbolType("ptr"), $1); // Create new temp with type ptr and store value
                         $$->addr->type->arrType = new symbolType("char");
                     }
-                    | PARANTHESIS_OPEN expression PARANTHESIS_CLOSE { $$ = $2 } // Assignment
+                    | PARANTHESIS_OPEN expression PARANTHESIS_CLOSE { $$ = $2; } // Assignment
                     ;
 
 postfix_expression  : primary_expression {
@@ -114,7 +117,7 @@ postfix_expression  : primary_expression {
                     | postfix_expression PARANTHESIS_OPEN argument_expression_list_opt PARANTHESIS_CLOSE {
                         $$ = new A();   // Make new array
                         $$->addr = symbolTable::gentemp($1->type); // Get return type
-                        emit("call", $$->addr->name, $1->addr->name, convIntToStr($3->param_count)); // call \$ \$->Array->name \$ 3->param_count
+                        emit("call", $$->addr->name, $1->addr->name, convIntToStr($3)); // call \$ \$->Array->name \$ 3->param_count
                     }
                     | postfix_expression PERIOD IDENTIFIER {}
                     | postfix_expression ARROW IDENTIFIER {}
@@ -172,7 +175,7 @@ unary_expression    : postfix_expression { $$ = $1; } // Pass the expression
                         }
                         else if ($1 == '+') $$ = $2;
                         else if ($1 == '-' || $1 == '~' || $1 == '!') {
-                            $$->addr = symbolTable::gentemp($2->addr->type->base); // Create new temp with type of current and store in addr
+                            $$->addr = symbolTable::gentemp(new symbolType($2->addr->type->base)); // Create new temp with type of current and store in addr
                             emit("= "+$1, $$->addr->name, $2->addr->name); // \$ \$->Array->name = - \$ 2->Array->name
                         }
                     }
@@ -204,7 +207,7 @@ multiplicative_expression : cast_expression {
                             else if($1->arrType == 1) {
                                 $$->addr = $1->location; // Copy the incoming symbol
                             }
-                            else $$->loc = $1->addr; // Copy the incoming symbol
+                            else $$->addr = $1->addr; // Copy the incoming symbol
                           }
                           | multiplicative_expression ASTERISK cast_expression {
                             if (typecheck($1->addr, $3->addr)) {
@@ -477,8 +480,8 @@ assignment_expression   : conditional_expression {$$ = $1;} // Pass
                             }
                             else if ($1->arrType == 1) emit("*=", $1->addr->name, $3->addr->name);  // Pointer type
                             else {
-                                $3->loc = convType($3->addr, $1->addr->type->base);
-                                emit("=", $1->addr->name, $3->loc->name); // \$ 1->Array->name = \$ 3->Array->name
+                                $3->addr = convType($3->addr, $1->addr->type->base);
+                                emit("=", $1->addr->name, $3->addr->name); // \$ 1->Array->name = \$ 3->Array->name
                             }
                             $$ = $3;
                         }
@@ -606,7 +609,7 @@ direct_declarator   : IDENTIFIER {
                     | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt assignment_expression SQ_BRACKET_CLOSE {
                         symbolType* t = $1->type;
                         symbolType* prev = NULL;
-                        while(t->type == "arr") {
+                        while(t->base == "arr") {
                             prev = t;
                             t = t->arrType;
                         }
@@ -624,7 +627,7 @@ direct_declarator   : IDENTIFIER {
                     | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt SQ_BRACKET_CLOSE {
                         symbolType* t = $1->type;
                         symbolType* prev = NULL;
-                        while(t->type == "arr") {
+                        while(t->base == "arr") {
                             prev = t;
                             t = t->arrType;
                         }
@@ -648,7 +651,7 @@ direct_declarator   : IDENTIFIER {
                         }
                         $1->nestedTable = currentSymbolTable;    // Update nested table
                         currentSymbolTable->parent = globalSymbolTable;   // Update parent
-                        switchTable(globalST);  // Switch to global symbol table
+                        switchTable(globalSymbolTable);  // Switch to global symbol table
                         currentSymbol = $$; // Update current symbol
                     }
                     | direct_declarator PARANTHESIS_OPEN identifier_list PARANTHESIS_CLOSE {}
@@ -660,7 +663,7 @@ direct_declarator   : IDENTIFIER {
                         }
                         $1->nestedTable = currentSymbolTable;    // Update nested table
                         currentSymbolTable->parent = globalSymbolTable;   // Update parent
-                        switchTable(globalST);  // Switch to global symbol table
+                        switchTable(globalSymbolTable);  // Switch to global symbol table
                         currentSymbol = $$; // Update current symbol
                     }
                     ;
@@ -790,7 +793,7 @@ selection_statement : IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M state
                         $$ = new S();
                         backpatch($3->trueList, $6);    // Backpatch to M1
                         backpatch($3->falseList, $10);   // Backpatch to M2
-                        list<int> temp = merge($7->falseList, $8->nextList); // Merge false lists
+                        list<int> temp = merge($7->nextList, $8->nextList); // Merge false lists
                         $$->nextList = merge(temp, $11->nextList); // Merge false lists
                     }
                     | SWITCH PARANTHESIS_OPEN expression PARANTHESIS_CLOSE statement {}
@@ -912,7 +915,7 @@ external_declaration    : function_definition {}
 function_definition : declaration_specifiers declarator declaration_list_opt change_table CURLY_BRACKET_OPEN block_item_list_opt CURLY_BRACKET_CLOSE {
                         currentSymbolTable->parent = globalSymbolTable;
                         SymbolTableCount = 0;
-                        switchTable(globalST);  // End of function, switch to global symbol table
+                        switchTable(globalSymbolTable);  // End of function, switch to global symbol table
                     }
                     ;
 

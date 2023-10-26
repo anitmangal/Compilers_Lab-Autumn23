@@ -2,7 +2,7 @@ BASE=asgn5_21CS10005_21CS30031
 DIR=./test-outputs
 
 run: lex.yy.o $(BASE).tab.o $(BASE)_translator.o
-	g++ lex.yy.o $(BASE).tab.o $(BASE)_translator.o -lfl
+	g++ lex.yy.o $(BASE).tab.o $(BASE)_translator.o
 
 $(BASE)_translator.o: $(BASE)_translator.h $(BASE)_translator.cxx
 	g++ -c $(BASE)_translator.h

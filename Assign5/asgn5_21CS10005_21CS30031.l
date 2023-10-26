@@ -1,11 +1,13 @@
 /* Declarations */
 %{
-    #include "y.tab.h"
     #include "asgn5_21CS10005_21CS30031_translator.h"
+    #include "asgn5_21CS10005_21CS30031.tab.h"
 %}
 
 /* For bison to get line number */
 %option yylineno
+%option noyywrap
+
 /* States */
 %x SINGLE_LINE_COMM
 %x MULTI_LINE_COMM
@@ -79,7 +81,7 @@ NEWLINE        \n
 "register"                  {return REGISTER;}
 "union"                     {return UNION;}
 
-{IDENTIFIER}                {yylval.symb = top->lookup(yytext); return IDENTIFIER;}
+{IDENTIFIER}                {yylval.symb = currentSymbolTable->lookup(yytext); return IDENTIFIER;}
 {CONSTANT_INT}              {yylval.iValue = atoi(yytext) ;return CONSTANT_INT;}
 {CONSTANT_FLOAT}            {yylval.sValue = yytext; return CONSTANT_FLOAT;}
 {CONSTANT_CHAR}             {yylval.sValue = yytext ;return CONSTANT_CHAR;}

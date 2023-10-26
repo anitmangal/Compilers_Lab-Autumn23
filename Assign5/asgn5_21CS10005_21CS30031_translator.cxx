@@ -11,7 +11,7 @@ int SymbolTableCount;
 string blockName;
 
 // Used for storing the last encountered type
-string varType;
+string data_type;
 
 // Implementations of constructors and functions for the symbolType class
 symbolType::symbolType(string base_, symbolType* arrType_, int width_):
@@ -63,7 +63,7 @@ symbol* symbolTable::lookup(string name) {
 
 symbol* symbolTable::gentemp(symbolType* t, string initValue) {
     // Create the name for the temporary
-    string name = "t" + convertIntToString(currentSymbolTable->count++);
+    string name = "t" + convIntToStr(currentSymbolTable->count++);
     symbol* sym = new symbol(name);
     sym->type = t;
     sym->initValue = initValue;         // Assign the initial value, if any
@@ -161,11 +161,11 @@ void symbolTable::update() {
 quad::quad(string res, string arg1_, string operation, string arg2_): result(res), arguement1(arg1_), opcode(operation), arguement2(arg2_) {}
 
 quad::quad(string res, int arg1_, string operation, string arg2_): result(res), opcode(operation), arguement2(arg2_) {
-    arguement1 = convertIntToString(arg1_);
+    arguement1 = convIntToStr(arg1_);
 }
 
 quad::quad(string res, float arg1_, string operation, string arg2_): result(res), opcode(operation), arguement2(arg2_) {
-    arguement1 = convertFloatToString(arg1_);
+    arguement1 = convFloatToStr(arg1_);
 }
 
 void quad::print() {
@@ -257,7 +257,7 @@ list<int> merge(list<int> &list1, list<int> &list2) {
 
 // Implementation of the backpatch function
 void backpatch(list<int> &l, int address) {
-    string str = convertIntToString(address);
+    string str = convIntToStr(address);
     for(list<int>::iterator it = l.begin(); it != l.end(); it++) {
         quadTable->array[*it].result = str;
     }
@@ -270,9 +270,9 @@ bool typecheck(symbol* &s1, symbol* &s2) {
 
     if(typecheck(t1, t2))
         return true;
-    else if(s1 = convertType(s1, t2->base))
+    else if(s1 = convType(s1, t2->base))
         return true;
-    else if(s2 = convertType(s2, t1->base))
+    else if(s2 = convType(s2, t1->base))
         return true;
     else
         return false;
@@ -289,8 +289,8 @@ bool typecheck(symbolType* t1, symbolType* t2) {
     return typecheck(t1->arrType, t2->arrType);
 }
 
-// Implementation of the convertType function
-symbol* convertType(symbol* s, string t) {
+// Implementation of the convType function
+symbol* convType(symbol* s, string t) {
     symbol* temp = symbolTable::gentemp(new symbolType(t));
 
     if(s->type->base == "float") {
@@ -332,16 +332,16 @@ symbol* convertType(symbol* s, string t) {
     return s;
 }
 
-string convertIntToString(int i) {
+string convIntToStr(int i) {
     return to_string(i);
 }
 
-string convertFloatToString(float f) {
+string convFloatToStr(float f) {
     return to_string(f);
 }
 
-// Implementation of the convertIntToBool function
-E* convertIntToBool(E* expr) {
+// Implementation of the convIntToBool function
+E* convIntToBool(E* expr) {
     if(expr->exprType != 0) {
         expr->falseList = makelist(nextinstr());    // Add falselist for boolean expressions
         emit("==", expr->addr->name, "0");
@@ -351,13 +351,13 @@ E* convertIntToBool(E* expr) {
     return expr;
 }
 
-// Implementation of the convertBoolToInt function
-E* convertBoolToInt(E* expr) {
+// Implementation of the convBoolToInt function
+E* convBoolToInt(E* expr) {
     if(expr->exprType == 0) {
         expr->addr = symbolTable::gentemp(new symbolType("int"));
         backpatch(expr->trueList, nextinstr());
         emit("=", expr->addr->name, "true");
-        emit("goto", convertIntToString(nextinstr() + 1));
+        emit("goto", convIntToStr(nextinstr() + 1));
         backpatch(expr->falseList, nextinstr());
         emit("=", expr->addr->name, "false");
     }
@@ -391,15 +391,15 @@ int sizeOfType(symbolType* t) {
         return -1;
 }
 
-string checkType(symbolType* t) {
+string printType(symbolType* t) {
     if(t == NULL)
         return "null";
     else if(t->base == "void" || t->base == "char" || t->base == "int" || t->base == "float" || t->base == "block" || t->base == "func")
         return t->base;
     else if(t->base == "ptr")
-        return "ptr(" + checkType(t->arrType) + ")";
+        return "ptr(" + printType(t->arrType) + ")";
     else if(t->base == "arr")
-        return "arr(" + convertIntToString(t->width) + ", " + checkType(t->arrType) + ")";
+        return "arr(" + convIntToStr(t->width) + ", " + printType(t->arrType) + ")";
     else
         return "unknown";
 }

@@ -124,7 +124,7 @@ bool typecheck(symbolType* t1, symbolType* t2); // Check if types t1 and t2 are 
 symbol* convType(symbol* s, string t); // Convert type of symbol s to t, which calls
 
 /* HELPER FUNCTIONS */
-bool typecheck(symbol* s1, symbol* s2); // Check if types of symbols s1 and s2 are compatible
+bool typecheck(symbol* &s1, symbol* &s2); // Check if types of symbols s1 and s2 are compatible
 string convIntToStr(int n); // Convert int to string
 string convFloatToStr(float f); // Convert float to string
 E* convIntToBool(E* e); // Convert int to bool
