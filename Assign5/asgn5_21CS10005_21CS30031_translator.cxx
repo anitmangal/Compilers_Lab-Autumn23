@@ -31,7 +31,7 @@ symbol* symbol::update(symbolType* t) {
 }
 
 // Implementations of constructors and functions for the symbolTable class
-symbolTable::symbolTable(string name_): name(name_), count(0) {}
+symbolTable::symbolTable(string name_): name(name_), count(0), parent(NULL) {}
 
 symbol* symbolTable::lookup(string name) {
     // Start searching for the symbol in the symbol table
