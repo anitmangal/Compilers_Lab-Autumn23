@@ -5,20 +5,31 @@
     extern int yylineno; // in lex.yy.c : Line number
     extern char *yytext;    // in lex.yy.c : Identified lexeme
     void yyerror(string s);  // in lex.yy.c : Error function
-    extern string data_type; // in asgn5_21CS10005_21CS30031_translator.cxx : Stores the data type of the current variable
+
+    extern int nextinstr;   // in asgn5_21CS10005_21CS30031_translator.cxx : Next instruction number
+    extern quadArray quadTable;    // in asgn5_21CS10005_21CS30031_translator.cxx : Quad array
+    extern symbolTable globalSymbolTable;   // in asgn5_21CS10005_21CS30031_translator.cxx : Global symbol table
+    extern symbolTable* currentSymbolTable; // in asgn5_21CS10005_21CS30031_translator.cxx : Current symbol table
+    extern list<string> stringList; // in asgn5_21CS10005_21CS30031_target_translator.cxx : List of string constants
 %}
 
 %union {
     int iValue;     // Integer value
-    char *sValue;   // String value
+    char cValue;    // Character value
+    string *sValue;   // String value
+    float fValue;   // Float value
+    void *ptr;  // Pointer type
+
     symbol *symb;       // Symbol
     symbolType *symbType;   // Symbol type
+    ExprType types;     // Expression type
+    opcode op;      // Opcode
+
     E *expr;   // Expression
-    S *statem;  // Statement
-    A *arr; // Array
-    int instr_ind;  // Keep track of instruction number
-    char unary_op;  // Unary operator
-    int param_count;   // Parameter count for functions
+    D *decl;   // Declaration
+    vector<D*> *declList; // Declaration list
+    P* param;   // Parameter
+    vector<P*> *paramList; // Parameter list
 }
 
 %code requires {
@@ -33,10 +44,10 @@
 %token LOGICAL_AND LOGICAL_OR QUESTION COLON SEMICOLON ELLIPSIS
 %token ASSIGN MULTIPLY_ASSIGN DIVIDE_ASSIGN MOD_ASSIGN PLUS_ASSIGN MINUS_ASSIGN LEFT_SHIFT_ASSIGN RIGHT_SHIFT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN COMMA HASH
 
-%token <symb> IDENTIFIER    // Identifier, taken as symbol
+%token <sValue> IDENTIFIER    // Identifier, taken as symbol
 %token <iValue> CONSTANT_INT    // Integer constant
-%token <sValue> CONSTANT_FLOAT  // Floating point constant
-%token <sValue> CONSTANT_CHAR   // Character constant
+%token <fValue> CONSTANT_FLOAT  // Floating point constant
+%token <cValue> CONSTANT_CHAR   // Character constant
 %token <sValue> LITERAL // String literal
 
 %start translation_unit

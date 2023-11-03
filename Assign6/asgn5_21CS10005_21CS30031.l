@@ -1,6 +1,5 @@
 /* Declarations */
 %{
-    #include <stdio.h>
     #include "asgn5_21CS10005_21CS30031_translator.h"
     #include "asgn5_21CS10005_21CS30031.tab.h"
 %}
@@ -140,10 +139,10 @@ WHITE_SPACE     [  \t\n]
 "#"                         {return HASH;}
 
 
-{IDENTIFIER}                {yylval.symb = currentSymbolTable->lookup(yytext); return IDENTIFIER;}
+{IDENTIFIER}                {yylval.sValue = new string(yytext); return IDENTIFIER;}
 {CONSTANT_INT}              {yylval.iValue = atoi(yytext) ;return CONSTANT_INT;}
-{CONSTANT_FLOAT}            {yylval.sValue = yytext; return CONSTANT_FLOAT;}
-{CONSTANT_CHAR}             {yylval.sValue = yytext ;return CONSTANT_CHAR;}
-{LITERAL}                   {yylval.sValue = yytext ;return LITERAL;}
+{CONSTANT_FLOAT}            {yylval.fValue = atof(yytext); return CONSTANT_FLOAT;}
+{CONSTANT_CHAR}             {yylval.cValue = yytext[1] ;return CONSTANT_CHAR;}
+{LITERAL}                   {yylval.sValue = new string(yytext);return LITERAL;}
 {WHITE_SPACE}               {}
 %%
