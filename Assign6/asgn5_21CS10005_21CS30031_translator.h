@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <list>
+#include <map>
 using namespace std;
 
 /* Sizes for data types as changeable parameters. */
@@ -12,20 +13,19 @@ using namespace std;
 #define sizeof_float 8
 #define sizeof_pointer 4
 
+// ENUMS for data types
+typedef enum { VOID, BOOL, CHAR, INT, FLOAT, ARRAY, POINTER, FUNCTION} DataType;
+
+// ENUMS for opcode
+typedef enum { ADD, SUB, MULT, DIV, MOD, BW_AND, BW_OR, BW_XOR, U_MINUS, REFERENCE, DEREFERENCE, GOTO_EQ, GOTO_NEQ, GOTO_GT, GOTO_GTE, GOTO_LT, GOTO_LTE, IF_GOTO, IF_FALSE_GOTO, CtoI, ItoC, FtoI, ItoF, FtoC, CtoF, ASSIGN, GOTO, RETURN, PARAM, CALL, ARR_IDX_ARG, ARR_IDX_RES, FUNC_BEG, FUNC_END, L_DEREF} opcode;
+
 /* Forward declarations. */
 class symbol;   // Symbol Table Record
 class symbolType;   // Type of a symbol
+class symbolVal;  // Value of a symbol
 class symbolTable;  // Symbol Table
 class quad; // Quad to store TAC
 class quadArray;    // List of Quads
-
-/* Global Variables */
-extern symbol* currentSymbol;   // Points to current symbol
-extern symbolTable* currentSymbolTable; // Points to current symbol table
-extern symbolTable* globalSymbolTable; // Points to global symbol table
-extern quadArray quadTable;   // Points to quad table
-extern int SymbolTableCount;  // Count of symbol tables
-extern string blockName;   // Name of current block
 
 /* Lex objects */
 extern int yyparse();
@@ -34,53 +34,61 @@ extern char* yytext;
 class symbol {
     public:
     string name;    // Name of symbol
-    symbolType* type;   // Type of symbol
-    string initValue;   // Initial value of symbol
+    symbolType type;   // Type of symbol
+    symbolVal* initValue;   // Initial value of symbol
     int size;  // Size of symbol
     int offset; // Offset of symbol
     symbolTable* nestedTable;  // Nested symbol table if symbol is a function/record
 
-    symbol(string name_, string type_ = "int", symbolType* arrType = NULL, int width = 0); // Constructor
-    symbol* update(symbolType* t);  // Update type of symbol to t
+    symbol();
 };
 
 
 class symbolType {
     public:
-    string base;   // Base type of symbol
-    int width; // Width of symbol, 1 by default. Size for arrays
-    symbolType* arrType;   // Array type of symbol
+    int pointers;
+    DataType base;
+    DataType inner;
+    vector<int> dimList;
+};
 
-    symbolType(string base_, symbolType* arrType_ = NULL, int width_ = 1); // Constructor
+class symbolVal {
+    public:
+    // Possible values
+    union {
+        int i;
+        char c;
+        float f;
+        void* p;
+    } vals;
+    // Constructors
+    symbolVal(int);
+    symbolVal(char);
+    symbolVal(float);
 };
 
 class symbolTable {
     public:
-    string name;    // Name of symbol table
-    int count;  // Count of symbols in symbol table
-    list<symbol> table;    // List of symbols in symbol table
-    symbolTable* parent;    // Parent symbol table
+    map <string, symbol*> table;    // Map of symbol name to symbol
+    vector<symbol*> symbols;    // Vector of symbols
+    int offset;
+    static int tempCount;   // Count of temporary variables
+    symbolTable();
+    symbol* lookup(string name, DataType t = INT, int pc = 0); // Lookup symbol in symbol table
+    symbol* searchGlobal(string name);
+    string gentemp(DataType t = INT);
 
-    symbolTable(string name_ = "NULL");  // Constructor
-
-    symbol* lookup(string name);    // Lookup for symbol in symbol table
-    static symbol* gentemp(symbolType* type_, string initValue_ = ""); // Generate temporary symbol
-    void update();  // Update offset of symbols in symbol table
-    void print();   // Print symbol table
+    void print(string tableName);
 };
 
 class quad {
     public:
-    string opcode; // Opcode of quad
+    opcode op; // Opcode of quad
     string arguement1;  // First argument of quad
     string arguement2;  // Second argument of quad
     string result; // Result of quad
-
-    quad(string res_, string arg1_, string op_ = "=", string arg2_ = ""); // Constructor for string argument
-    quad(string res_, int arg1_, string op_ = "=", string arg2_ = ""); // Constructor for int argument
-    quad(string res_, float arg1_, string op_ = "=", string arg2_ = ""); // Constructor for float argument
-
-    void print();   // Print quad
+    quad(string, string, string, opcode); // Constructor
+    string print();   // Print quad
 };
 
 class quadArray{
@@ -90,35 +98,47 @@ class quadArray{
 };
 
 // Method to add a new quad.
-void emit(string opcode, string res, string arg1 = "", string arg2 = ""); // String type arg
-void emit(string opcode, string res, int arg1, string arg2 = ""); // Int type arg
-void emit(string opcode, string res, float arg1, string arg2 = ""); // Float type arg
+void emit(string result, string arg1, string arg2, opcode op); // String type arg
+void emit(string result, int constant, opcode op); // Int type arg
+void emit(string result, float constant, opcode op); // Float type arg
+void emit(string result, char constant, opcode op); // Char type arg
 
 
-
-// Array class for arrays and pointers
-class A {
+// Parameter class for statements
+class P {
     public:
-    string arrType; // Type of array. arr or ptr
-    symbol* addr;   // Base symbol of array in Symbol Table
-    symbol* location; // To get address of array
-    symbolType* type;   // Type of array stored in symbol table
-};
-
-// Statement class for statements
-class S {
-    public:
-    list <int> nextList;    // List of nexts
+    string name;    // Name of parameter
+    symbolType type; // Type of parameter
 };
 
 // Expression class for expressions
 class E {
     public:
-    string exprType;    // Type of expression. bool or not_bool
-    symbol* addr; // Base symbol of expression in Symbol Table
-    list <int> trueList;    // List of statements for true
-    list <int> falseList;   // List of statements for false
-    list <int> nextList;    // List of nexts
+    int instr;
+    DataType type;  // Type of expression
+    string addr;    // Address of expression
+
+    // For boolean expressions and statements
+    list<int> trueList;
+    list<int> falseList;
+    list<int> nextList;
+    
+    int deRef;
+    string* deRefName;
+
+    E();
+};
+
+// Declaration class
+class D {
+    public:
+    string name;    // Name of declaration
+    int pointers;
+    DataType type;  // Type of declaration
+    DataType inner; // Inner type of declaration (Array)
+    vector <int> instrList; // List of instructions
+    E* initValue;   // Initial value of declaration
+    int pc; // Pointer and array count
 };
 
 /* GLOBAL FUNCTIONS */
@@ -126,16 +146,13 @@ list<int> makelist(int i); // Make a new list with i as the only element, index 
 list<int> merge(list<int> &p1, list <int> &p2); // Merge two lists, return merged list
 void backpatch(list<int> p, int i); // Backpatch list p with i, update quad array
 bool typecheck(symbolType* t1, symbolType* t2); // Check if types t1 and t2 are compatible (called by typecheck(symbol, symbol) to check types of symbols and compatible types)
-symbol* convType(symbol* s, string t); // Convert type of symbol s to t, which calls
+void convType(E* arg, E* result, DataType target); // Convert type of arg to target type and store in result
+void convType(string t, DataType target, string f, DataType source); // Convert type of f to target type
 
 /* HELPER FUNCTIONS */
-bool typecheck(symbol* &s1, symbol* &s2); // Check if types of symbols s1 and s2 are compatible
-string convIntToStr(int n); // Convert int to string
-string convFloatToStr(float f); // Convert float to string
-E* convIntToBool(E* e); // Convert int to bool
-E* convBoolToInt(E* e); // Convert bool to int
-void switchTable(symbolTable* newTable); // Switch to new symbol table
-int nextinstr(); // Return index of next quad
+string typeCheck(symbolType t); // Return string representation of type t
+void convIntToBool(E* e); // Convert int to bool
 int sizeOfType(symbolType* t); // Return size of type t
-string printType(symbolType* t); // Return string representation of type t
+string getInitValue(symbol* sym); // Return initial value of symbol sym
+DataType max(DataType t1, DataType t2); // Return max of t1 and t2
 #endif

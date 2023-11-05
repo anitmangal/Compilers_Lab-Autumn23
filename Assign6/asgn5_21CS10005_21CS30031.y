@@ -38,12 +38,12 @@
 }
 
 // TOKENS
-%token AUTO ENUM RESTRICT UNSIGNED BREAK EXTERN RETURN VOID CASE FLOAT SHORT VOLATILE CHAR FOR SIGNED WHILE CONST GOTO SIZEOF BOOL CONTINUE IF STATIC COMPLEX DEFAULT INLINE STRUCT IMAGINARY DO INT SWITCH DOUBLE LONG TYPEDEF ELSE REGISTER UNION INVALID_TOKEN
+%token AUTO ENUM RESTRICT UNSIGNED BREAK EXTERN VOID CASE FLOAT SHORT VOLATILE CHAR FOR SIGNED WHILE CONST GOTO SIZEOF BOOL CONTINUE IF STATIC COMPLEX RETURN_ DEFAULT INLINE IMAGINARY DO INT SWITCH DOUBLE LONG ELSE REGISTER
 %token PARANTHESIS_OPEN PARANTHESIS_CLOSE SQ_BRACKET_OPEN SQ_BRACKET_CLOSE CURLY_BRACKET_OPEN CURLY_BRACKET_CLOSE
 %token PERIOD ARROW INCREMENT DECREMENT AMPERSAND ASTERISK PLUS MINUS TILDE EXCLAMATION SLASH PERCENT
 %token LEFT_SHIFT RIGHT_SHIFT LESS_THAN GREATER_THAN LESS_THAN_EQUAL GREATER_THAN_EQUAL EQUAL NOT_EQUAL CARET PIPE
 %token LOGICAL_AND LOGICAL_OR QUESTION COLON SEMICOLON ELLIPSIS
-%token ASSIGN MULTIPLY_ASSIGN DIVIDE_ASSIGN MOD_ASSIGN PLUS_ASSIGN MINUS_ASSIGN LEFT_SHIFT_ASSIGN RIGHT_SHIFT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN COMMA HASH
+%token ASSIGN MULTIPLY_ASSIGN DIVIDE_ASSIGN MOD_ASSIGN PLUS_ASSIGN MINUS_ASSIGN LEFT_SHIFT_ASSIGN RIGHT_SHIFT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN COMMA
 
 %token <sValue> IDENTIFIER    // Identifier, taken as symbol
 %token <iValue> CONSTANT_INT    // Integer constant
@@ -61,7 +61,7 @@
 %type <cValue> unary_operator // Unary operator non-terminals
 %type <param> parameter_declaration   // Number of parameters non-terminals
 %type <paramList> parameter_list parameter_type_list parameter_type_list_opt argument_expression_list // Parameter list types
-%type <expr> expression primary_expression constant multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression  postfix_expression unary_expression cast_expression expression_statement  statement labeled_statement compound_statement selection_statement iteration_statement jump_statement block_item block_item_list block_item_list_opt initializer M N // Expression type non-terminals, statements included.
+%type <expr> expression primary_expression constant multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression  postfix_expression unary_expression cast_expression expression_statement  statement labeled_statement compound_statement selection_statement iteration_statement jump_statement block_item block_item_list initializer M N // Expression type non-terminals, statements included.
 %type <iValue> pointer  // Pointers are taken as integer type
 %type <types> type_specifier declaration_specifiers // Data Type types
 %type <decl> direct_declarator initializer_list init_declarator declarator function_prototype // Declaration non-terminals
@@ -77,7 +77,7 @@ primary_expression  : IDENTIFIER    {
                     }
                     | LITERAL       {
                         $$ = new E();  // New expression
-                        $$->addr = ".StrC"+to_string(strCount++);
+                        $$->addr = ".LC"+to_string(strCount++);
                         stringList.push_back(*($1));
                     }
                     | constant { $$ = $1; }

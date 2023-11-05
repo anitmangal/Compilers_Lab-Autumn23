@@ -3,87 +3,86 @@
 using namespace std;
 
 // Global variables as defined and explained in the header file
+int nextinstr = 0;
+int symbolTable::tempCount = 0;
 symbol* currentSymbol;
-symbolTable* currentSymbolTable;
-symbolTable* globalSymbolTable;
 quadArray quadTable;
-int SymbolTableCount;
-string blockName;
+symbolTable* currentSymbolTable;
+symbolTable globalSymbolTable;
 
-// Used for storing the last encountered type
-string data_type;
-
-// Implementations of constructors and functions for the symbolType class
-symbolType::symbolType(string base_, symbolType* arrType_, int width_):
-    base(base_), width(width_), arrType(arrType_) {}
-
-// Implementations of constructors and functions for the symbol class
-symbol::symbol(string name_, string type_, symbolType* arrType, int width): name(name_), initValue("-"), offset(0), nestedTable(NULL) {
-    type = new symbolType(type_, arrType, width);
-    size = sizeOfType(type);
+// Constructors of SymbolVal
+symbolVal::symbolVal(int i) {
+    vals.i = i;
 }
 
-symbol* symbol::update(symbolType* t) {
-    // Update the type and size for the symbol
-    type = t;
-    size = sizeOfType(t);
-    return this;
+symbolVal::symbolVal(char c) {
+    vals.c = c;
 }
+
+symbolVal::symbolVal(float f) {
+    vals.f = f;
+}
+
+// Constructor of symbol
+symbol::symbol(): nestedTable(NULL) {}
 
 // Implementations of constructors and functions for the symbolTable class
-symbolTable::symbolTable(string name_): name(name_), count(0), parent(NULL) {}
+symbolTable::symbolTable(): offset(0) {}
 
-symbol* symbolTable::lookup(string name) {
-    // Start searching for the symbol in the symbol table
-    for(list<symbol>::iterator it = table.begin(); it != table.end(); it++) {
-        if(it->name == name) {
-            return &(*it);
+symbol* symbolTable::lookup(string name, DataType t, int pc) {
+    if (table.count(name) == 0) {
+        symbol* sym = new symbol();
+        sym->name = name;
+        sym->type.base = t;
+        sym->offset = offset;
+        sym->initValue = NULL;
+
+        if (pc == 0) {
+            sym->size = sizeOfType(t);
+            offset += sym->size;
         }
+        else {
+            sym->size = sizeof_pointer;
+            sym->type.inner = t;
+            sym->type.pointers = pc;
+            sym->type.base = ARRAY;
+        }
+        symbols.push_back(sym);
+        table[name] = sym;
     }
-
-    // If not found, go up the hierarchy to search in the parent symbol tables
-    symbol* s = NULL;
-    if(this->parent != NULL) {
-        s = this->parent->lookup(name);
-    }
-
-    if(currentSymbolTable == this && s == NULL) {
-        // If the symbol is not found, create the symbol, add it to the symbol table and return a pointer to it
-        symbol* sym = new symbol(name);
-        table.push_back(*sym);
-        return &(table.back());
-    }
-    else if(s != NULL) {
-        // If the symbol is found in one of the parent symbol tables, return it
-        return s;
-    }
-
-    return NULL;
+    return table[name];
 }
 
-symbol* symbolTable::gentemp(symbolType* t, string initValue) {
-    // Create the name for the temporary
-    string name = "t" + convIntToStr(currentSymbolTable->count++);
-    symbol* sym = new symbol(name);
-    sym->type = t;
-    sym->initValue = initValue;         // Assign the initial value, if any
+symbol* symbolTable::searchGlobal(string name) {
+    return (table.count(name)?table[name]:NULL);
+}
+
+string symbolTable::gentemp(DataType t) {
+    string tempName = "t" + to_string(symbolTable::tempCount++);
+
+    // Attributes
+    symbol* sym = new symbol();
+    sym->name = tempName;
     sym->size = sizeOfType(t);
+    sym->offset = offset;
+    sym->type.base = t;
+    sym->initValue = NULL;
 
-    // Add the temporary to the symbol table
-    currentSymbolTable->table.push_back(*sym);
-    return &(currentSymbolTable->table.back());
+    offset += sym->size;
+    symbols.push_back(sym);
+    table[tempName] = sym;
+
+    return tempName;
 }
 
-void symbolTable::print() {
+void symbolTable::print(string tableName) {
     for(int i = 0; i < 120; i++) {
         cout << '-';
     }
     cout << endl;
-    cout << "Symbol Table: " << setfill(' ') << left << setw(50) << this->name;
-    cout << "Parent Table: " << setfill(' ') << left << setw(50) << ((this->parent != NULL) ? this->parent->name : "NULL") << endl;
-    for(int i = 0; i < 120; i++) {
+    cout << "Symbol Table: " << setfill(' ') << left << setw(50) << tableName << endl;
+    for(int i = 0; i < 120; i++)
         cout << '-';
-    }
     cout << endl;
 
     // Table Headers
@@ -94,153 +93,172 @@ void symbolTable::print() {
     cout << left << setw(15) << "Offset";
     cout << left << "Nested" << endl;
 
-    for(int i = 0; i < 120; i++) {
+    for(int i = 0; i < 120; i++)
         cout << '-';
-    }
     cout << endl;
 
-    list<symbolTable*> tableList;
+    // For storing nested symbol tables
+    vector<pair<string, symbolTable*>> tableList;
 
     // Print the symbols in the symbol table
-    for(list<symbol>::iterator it = this->table.begin(); it != this->table.end(); it++) {
-        cout << left << setw(25) << it->name;
-        cout << left << setw(25) << printType(it->type);
-        cout << left << setw(20) << (it->initValue != "" ? it->initValue : "-");
-        cout << left << setw(15) << it->size;
-        cout << left << setw(15) << it->offset;
+    for(int i = 0; i < (int)symbols.size(); i++) {
+        symbol* sym = symbols[i];
+        cout << left << setw(25) << sym->name;
+        cout << left << setw(25) << typeCheck(sym->type);
+        cout << left << setw(20) << getInitValue(sym);
+        cout << left << setw(15) << sym->size;
+        cout << left << setw(15) << sym->offset;
         cout << left;
 
-        if(it->nestedTable != NULL) {
-            cout << it->nestedTable->name << endl;
-            tableList.push_back(it->nestedTable);
+        if(sym->nestedTable != NULL) {
+            string nestedTableName = tableName + "." + sym->name;
+            cout << nestedTableName << endl;
+            tableList.push_back({nestedTableName, sym->nestedTable});
         }
-        else {
+        else
             cout << "NULL" << endl;
-        }
     }
 
-    for(int i = 0; i < 120; i++) {
+    for(int i = 0; i < 120; i++)
         cout << '-';
-    }
     cout << endl << endl;
 
     // Recursively call the print function for the nested symbol tables
-    for(list<symbolTable*>::iterator it = tableList.begin(); it != tableList.end(); it++) {
-        (*it)->print();
-    }
-
-}
-
-void symbolTable::update() {
-    list<symbolTable*> tableList;
-    int off_set;
-
-    // Update the offsets of the symbols based on their sizes
-    for(list<symbol>::iterator it = table.begin(); it != table.end(); it++) {
-        if(it == table.begin()) {
-            it->offset = 0;
-            off_set = it->size;
-        }
-        else {
-            it->offset = off_set;
-            off_set = it->offset + it->size;
-        }
-
-        if(it->nestedTable != NULL) {
-            tableList.push_back(it->nestedTable);
-        }
-    }
-
-    // Recursively call the update function to update the offsets of symbols of the nested symbol tables
-    for(list<symbolTable*>::iterator iter = tableList.begin(); iter != tableList.end(); iter++) {
-        (*iter)->update();
+    for(vector<pair<string, symbolTable*>>::iterator it = tableList.begin(); it != tableList.end(); it++) {
+        pair<string, symbolTable*> p = (*it);
+        p.second->print(p.first);
     }
 }
 
 // Implementations of constructors and functions for the quad class
-quad::quad(string res, string arg1_, string operation, string arg2_): result(res), arguement1(arg1_), opcode(operation), arguement2(arg2_) {}
+quad::quad(string res, string arg1_, string arg2_, opcode op_): result(res), arguement1(arg1_), arguement2(arg2_), op(op_) {}
 
-quad::quad(string res, int arg1_, string operation, string arg2_): result(res), opcode(operation), arguement2(arg2_) {
-    arguement1 = convIntToStr(arg1_);
-}
 
-quad::quad(string res, float arg1_, string operation, string arg2_): result(res), opcode(operation), arguement2(arg2_) {
-    arguement1 = convFloatToStr(arg1_);
-}
+string quad::print() {
+    string out = "";
+    if(op >= ADD && op <= BW_XOR) {                 // Binary operators
+        out += (result + " = " + arguement1 + " ");
+        switch(op) {
+            case ADD: out += "+"; break;
+            case SUB: out += "-"; break;
+            case MULT: out += "*"; break;
+            case DIV: out += "/"; break;
+            case MOD: out += "%"; break;
+            case BW_AND: out += "&"; break;
+            case BW_OR: out += "|"; break;
+            case BW_XOR: out += "^"; break;
+        }
+        out += (" " + arguement2);
+    }
+    else if(op >= U_MINUS && op <= DEREFERENCE) {        // Unary operators
+        out += (result + " = ");
+        switch(op) {
+            case U_MINUS: out += "-"; break;
+            case REFERENCE: out += "&"; break;
+            case DEREFERENCE: out += "*"; break;
+        }
+        out += arguement1;
+    }
+    else if(op >= GOTO_EQ && op <= IF_FALSE_GOTO) { // Conditional operators
+        out += ("if " + arguement1 + " ");
+        switch(op) {
+            case GOTO_EQ: out += "=="; break;
+            case GOTO_NEQ: out += "!="; break;
+            case GOTO_GT: out += ">"; break;
+            case GOTO_GTE: out += ">="; break;
+            case GOTO_LT: out += "<"; break;
+            case GOTO_LTE: out += "<="; break;
+            case IF_GOTO: out += "!= 0"; break;
+            case IF_FALSE_GOTO: out += "== 0"; break;
+        }
+        out += (" " + arguement2 + " goto " + result);
+    }
+    else if(op >= CtoI && op <= CtoF) {             // Type Conversion functions
+        out += (result + " = ");
+        switch(op) {
+            case CtoI: out += "CharToInt"; break;
+            case ItoC: out += "IntToChar"; break;
+            case FtoI: out += "FloatToInt"; break;
+            case ItoF: out += "IntToFloat"; break;
+            case FtoC: out += "FloatToChar"; break;
+            case CtoF: out += "CharToFloat"; break;
+        }
+        out += ("(" + arguement1 + ")");
+    }
 
-void quad::print() {
-    if(opcode == "=")       // Simple assignment
-        cout << result << " = " << arguement1;
-    else if(opcode == "*=")
-        cout << "*" << result << " = " << arguement1;
-    else if(opcode == "[]=")
-        cout << result << "[" << arguement1 << "]" << " = " << arguement2;
-    else if(opcode == "=[]")
-        cout << result << " = " << arguement1 << "[" << arguement2 << "]";
-    else if(opcode == "goto" || opcode == "param" || opcode == "return")
-        cout << opcode << " " << result;
-    else if(opcode == "call")
-        cout << result << " = " << "call " << arguement1 << ", " << arguement2;
-    else if(opcode == "label")
-        cout << result << ": ";
+    else if(op == ASSIGN)                       // Assignment operator
+        out += (result + " = " + arguement1);
+    else if(op == GOTO)                         // Goto
+        out += ("goto " + result);
+    else if(op == RETURN)                       // Return from a function
+        out += ("return " + result);
+    else if(op == PARAM)                        // Parameters for a function
+        out += ("param " + result);
+    else if(op == CALL) {                       // Call a function
+        if(arguement2.size() > 0)
+            out += (arguement2 + " = ");
+        out += ("call " + result + ", " + arguement1);
+    }
+    else if(op == ARR_IDX_ARG)                  // Array indexing
+        out += (result + " = " + arguement1 + "[" + arguement2 + "]");
+    else if(op == ARR_IDX_RES)                  // Array indexing
+        out += (result + "[" + arguement2 + "] = " + arguement1);
+    else if(op == FUNC_BEG)                     // Function begin
+        out += (result + ": ");
+    else if(op == FUNC_END) {                   // Function end
+        out += ("function " + result + " ends");
+    }
+    else if(op == L_DEREF)                      // Dereference
+        out += ("*" + result + " = " + arguement1);
 
-    // Binary Operators
-    else if(opcode == "+" || opcode == "-" || opcode == "*" || opcode == "/" || opcode == "%" || opcode == "^" || opcode == "|" || opcode == "&" || opcode == "<<" || opcode == ">>")
-        cout << result << " = " << arguement1 << " " << opcode << " " << arguement2;
-
-    // Relational Operators
-    else if(opcode == "==" || opcode == "!=" || opcode == "<" || opcode == ">" || opcode == "<=" || opcode == ">=")
-        cout << "if " << arguement1 << " " << opcode << " " << arguement2 << " goto " << result;
-
-    // Unary operators
-    else if(opcode == "= &" || opcode == "= *" || opcode == "= -" || opcode == "= ~" || opcode == "= !")
-        cout << result << " " << opcode << arguement1;
-
-    else
-        cout << "Unknown Operator";
+    return out;
 }
 
 // Implementations of constructors and functions for the quadArray class
 void quadArray::print() {
-    for(int i = 0; i < 120; i++) {
+    for(int i = 0; i < 120; i++)
         cout << '-';
-    }
     cout << endl;
     cout << "THREE ADDRESS CODE (TAC):" << endl;
-    for(int i = 0; i < 120; i++) {
+    for(int i = 0; i < 120; i++)
         cout << '-';
-    }
     cout << endl;
 
-    int cnt = 0;
     // Print each of the quads one by one
-    for(vector<quad>::iterator it = this->array.begin(); it != this->array.end(); it++, cnt++) {
-        if(it->opcode != "label") {
-            cout << left << setw(4) << cnt << ":    ";
-            it->print();
-        }
-        else {
-            cout << endl << left << setw(4) << cnt << ": ";
-            it->print();
-        }
-        cout << endl;
+    for(int i = 0; i < (int)array.size(); i++) {
+        if(array[i].op != FUNC_BEG && array[i].op != FUNC_END)
+            cout << left << setw(4) << i << ":    ";
+        else if(array[i].op == FUNC_BEG)
+            cout << endl << left << setw(4) << i << ": ";
+        else if(array[i].op == FUNC_END)
+            cout << left << setw(4) << i << ": ";
+        cout << array[i].print() << endl;
     }
+    cout << endl;
 }
+
+// Implementations of constructors and functions for the E class
+E::E(): deRef(0), deRefName(NULL) {}
 
 // Overloaded emit functions
-void emit(string op, string result, string arguement1, string arguement2) {
-    quad* q = new quad(result, arguement1, op, arguement2);
-    quadTable.array.push_back(*q);
+void emit(string result, string arg1, string arg2, opcode op) {
+    quadTable.array.push_back(quad(result, arg1, arg2, op));
+    nextinstr++;
 }
 
-void emit(string op, string result, int arguement1, string arguement2) {
-    quad* q = new quad(result, arguement1, op, arguement2);
-    quadTable.array.push_back(*q);
+void emit(string result, int constant, opcode op) {
+    quadTable.array.push_back(quad(result, to_string(constant), "", op));
+    nextinstr++;
 }
 
-void emit(string op, string result, float arguement1, string arguement2) {
-    quad* q = new quad(result, arguement1, op, arguement2);
-    quadTable.array.push_back(*q);
+void emit(string result, float constant, opcode op) {
+    quadTable.array.push_back(quad(result, to_string(constant), "", op));
+    nextinstr++;
+}
+
+void emit(string result, char constant, opcode op) {
+    quadTable.array.push_back(quad(result, to_string(constant), "", op));
+    nextinstr++;
 }
 
 // Implementation of the makelist function
@@ -257,164 +275,104 @@ list<int> merge(list<int> &list1, list<int> &list2) {
 
 // Implementation of the backpatch function
 void backpatch(list<int> l, int address) {
-    string str = convIntToStr(address);
+    string str = to_string(address);
     for(list<int>::iterator it = l.begin(); it != l.end(); it++) {
         quadTable.array[*it].result = str;
     }
 }
 
-// Implementation of the typecheck functions
-bool typecheck(symbol* &s1, symbol* &s2) {
-    symbolType* t1 = s1->type;
-    symbolType* t2 = s2->type;
-
-    if(typecheck(t1, t2))
-        return true;
-    else if(s1 == convType(s1, t2->base))
-        return true;
-    else if(s2 == convType(s2, t1->base))
-        return true;
-    else
-        return false;
-}
-
-bool typecheck(symbolType* t1, symbolType* t2) {
-    if(t1 == NULL && t2 == NULL)
-        return true;
-    else if(t1 == NULL || t2 == NULL)
-        return false;
-    else if(t1->base != t2->base)
-        return false;
-
-    return typecheck(t1->arrType, t2->arrType);
-}
-
 // Implementation of the convType function
-symbol* convType(symbol* s, string t) {
-    symbol* temp = symbolTable::gentemp(new symbolType(t));
-
-    if(s->type->base == "float") {
-        if(t == "int") {
-            emit("=", temp->name, "float2int(" + s->name + ")");
-            return temp;
-        }
-        else if(t == "char") {
-            emit("=", temp->name, "float2char(" + s->name + ")");
-            return temp;
-        }
-        return s;
+void convType(E* arg, E* result, DataType target) {
+    if (result->type == target) return;
+    if (result->type == FLOAT) {
+        if (target == INT) emit(arg->addr, result->addr, "", FtoI);
+        else if(target == CHAR) emit(arg->addr, result->addr, "", FtoC);
     }
-
-    else if(s->type->base == "int") {
-        if(t == "float") {
-            emit("=", temp->name, "int2float(" + s->name + ")");
-            return temp;
-        }
-        else if(t == "char") {
-            emit("=", temp->name, "int2char(" + s->name + ")");
-            return temp;
-        }
-        return s;
+    else if (result->type == INT) {
+        if (target == FLOAT) emit(arg->addr, result->addr, "", ItoF);
+        else if(target == CHAR) emit(arg->addr, result->addr, "", ItoC);
     }
-
-    else if(s->type->base == "char") {
-        if(t == "float") {
-            emit("=", temp->name, "char2float(" + s->name + ")");
-            return temp;
-        }
-        else if(t == "int") {
-            emit("=", temp->name, "char2int(" + s->name + ")");
-            return temp;
-        }
-        return s;
+    else if (result->type == CHAR) {
+        if (target == FLOAT) emit(arg->addr, result->addr, "", CtoF);
+        else if(target == INT) emit(arg->addr, result->addr, "", CtoI);
     }
-
-    return s;
 }
 
-string convIntToStr(int i) {
-    return to_string(i);
-}
-
-string convFloatToStr(float f) {
-    return to_string(f);
+void convType(string t, DataType target, string f, DataType source) {
+    if (source == target) return;
+    if (source == FLOAT) {
+        if (target == INT) emit(t, f, "", FtoI);
+        else if(target == CHAR) emit(t, f, "", FtoC);
+    }
+    else if (source == INT) {
+        if (target == FLOAT) emit(t, f, "", ItoF);
+        else if(target == CHAR) emit(t, f, "", ItoC);
+    }
+    else if (source == CHAR) {
+        if (target == FLOAT) emit(t, f, "", CtoF);
+        else if(target == INT) emit(t, f, "", CtoI);
+    }
 }
 
 // Implementation of the convIntToBool function
-E* convIntToBool(E* expr) {
-    if(expr->exprType != "bool") {
-        expr->falseList = makelist(nextinstr());    // Add falselist for boolean expressions
-        emit("==", expr->addr->name, "0");
-        expr->trueList = makelist(nextinstr());     // Add truelist for boolean expressions
-        emit("goto", "");
+void convIntToBool(E* expr) {
+    if (expr->type != BOOL) {
+        expr->type = BOOL;
+        expr->falseList = makelist(nextinstr);  // False list is the next instruction
+        emit("", expr->addr, "", IF_FALSE_GOTO);
+        expr->trueList = makelist(nextinstr);   // True list is the next instruction
+        emit("", "", "", GOTO);
     }
-    return expr;
 }
 
-// Implementation of the convBoolToInt function
-E* convBoolToInt(E* expr) {
-    if(expr->exprType == "bool") {
-        expr->addr = symbolTable::gentemp(new symbolType("int"));
-        backpatch(expr->trueList, nextinstr());
-        emit("=", expr->addr->name, "true");
-        emit("goto", convIntToStr(nextinstr() + 1));
-        backpatch(expr->falseList, nextinstr());
-        emit("=", expr->addr->name, "false");
+// Implementation of the sizeOfType function
+int sizeOfType(DataType t) {
+    if (t == VOID) return sizeof_void;
+    else if (t == INT) return sizeof_int;
+    else if (t == CHAR) return sizeof_char;
+    else if (t == FLOAT) return sizeof_float;
+    else if (t == POINTER) return sizeof_pointer;
+    else return 0;
+}
+
+// Implementation of typeCheck funciton
+string typeCheck(symbolType t) {
+    if (t.base == VOID) return "void";
+    else if (t.base == CHAR) return "char";
+    else if (t.base == INT) return "int";
+    else if (t.base == FLOAT) return "float";
+    else if (t.base == FUNCTION) return "function";
+    else if (t.base == POINTER) {
+        string temp = "";
+        if (t.inner == CHAR) temp += "char";
+        else if (t.inner == INT) temp += "int";
+        else if (t.inner == FLOAT) temp+= "float";
+        temp += string(t.pointers, '*');
+        return temp;
     }
-    return expr;
+    else if (t.base == ARRAY) {
+        string temp = "";
+        if (t.inner == CHAR) temp += "char";
+        else if (t.inner == INT) temp += "int";
+        else if (t.inner == FLOAT) temp+= "float";
+        vector <int> templist = t.dimList;
+        for (int i = 0; i < (int)templist.size(); i++) {
+            if (templist[i]) temp += "[" + to_string(templist[i]) + "]";
+            else temp += "[]";
+        }
+        if (templist.size() == 0) temp += "[]";
+        return temp;
+    }
+    else return "unknown";
 }
 
-void switchTable(symbolTable* newTable) {
-    currentSymbolTable = newTable;
-}
-
-int nextinstr() {
-    return quadTable.array.size();
-}
-
-int sizeOfType(symbolType* t) {
-    if(t->base == "void")
-        return sizeof_void;
-    else if(t->base == "char")
-        return sizeof_char;
-    else if(t->base == "int")
-        return sizeof_int;
-    else if(t->base == "ptr")
-        return sizeof_pointer;
-    else if(t->base == "float")
-        return sizeof_float;
-    else if(t->base == "arr")
-        return t->width * sizeOfType(t->arrType);
-    else if(t->base == "func")
-        return 0;
-    else
-        return -1;
-}
-
-string printType(symbolType* t) {
-    if(t == NULL)
-        return "null";
-    else if(t->base == "void" || t->base == "char" || t->base == "int" || t->base == "float" || t->base == "block" || t->base == "func")
-        return t->base;
-    else if(t->base == "ptr")
-        return "ptr(" + printType(t->arrType) + ")";
-    else if(t->base == "arr")
-        return "arr(" + convIntToStr(t->width) + ", " + printType(t->arrType) + ")";
-    else
-        return "unknown";
-}
-
-int main() {
-    SymbolTableCount = 0;                            // Initialize STCount to 0
-    globalSymbolTable = new symbolTable("Global");   // Create global symbol table
-    currentSymbolTable = globalSymbolTable;                   // Make global symbol table the currently active symbol table
-    blockName = "";
-
-    yyparse();
-    globalSymbolTable->update();
-    quadTable.print();       // Print Three Address Code
-    cout << endl;
-    globalSymbolTable->print();      // Print symbol tables
-
-    return 0;
+// Implementation of getinitValue function
+string getinitValue(symbol* sym) {
+    if (sym->initValue != NULL) {
+        if(sym->type.base == INT) return to_string(sym->initValue->vals.i);
+        else if(sym->type.base == CHAR) return to_string(sym->initValue->vals.c);
+        else if(sym->type.base == FLOAT) return to_string(sym->initValue->vals.f);
+        else return "-";
+    }
+    else return "-";
 }
