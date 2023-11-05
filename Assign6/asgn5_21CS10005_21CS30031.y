@@ -11,6 +11,7 @@
     extern symbolTable globalSymbolTable;   // in asgn5_21CS10005_21CS30031_translator.cxx : Global symbol table
     extern symbolTable* currentSymbolTable; // in asgn5_21CS10005_21CS30031_translator.cxx : Current symbol table
     extern list<string> stringList; // in asgn5_21CS10005_21CS30031_target_translator.cxx : List of string constants
+    int stringCount = 0; // Counts number of string constants encountered
 %}
 
 %union {
@@ -22,7 +23,7 @@
 
     symbol *symb;       // Symbol
     symbolType *symbType;   // Symbol type
-    ExprType types;     // Expression type
+    dataType types;     // Expression type
     opcode op;      // Opcode
 
     E *expr;   // Expression
@@ -52,149 +53,218 @@
 
 %start translation_unit
 
-%right THEN ELSE    // Checks if Else can be matched with If
+// To handle else matching
+%expect 1
+%nonassoc ELSE
 
 /* Types for all non-terminals */
-%type <unary_op> unary_operator // Unary operator non-terminals
-%type <param_count> argument_expression_list argument_expression_list_opt   // Number of parameters non-terminals
-%type <expr> expression primary_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression expression_statement   // Expression type non-terminals
-%type <statem> statement labeled_statement compound_statement selection_statement iteration_statement jump_statement loop_statement block_item block_item_list block_item_list_opt  // Statement type non-terminals
-%type <symbType> pointer   // Pointer non-terminal
-%type <symb> constant initializer direct_declarator init_declarator declarator  // Symbol non-terminals
-%type <arr> postfix_expression unary_expression cast_expression // Array non-terminals
-%type <instr_ind> M // Augmented non-terminal to help with backpatching by storing next instruction index
-%type <statem> N    // Augmented non-terminal to help with control flow
+%type <cValue> unary_operator // Unary operator non-terminals
+%type <param> parameter_declaration   // Number of parameters non-terminals
+%type <paramList> parameter_list parameter_type_list parameter_type_list_opt argument_expression_list // Parameter list types
+%type <expr> expression primary_expression constant multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression  postfix_expression unary_expression cast_expression expression_statement  statement labeled_statement compound_statement selection_statement iteration_statement jump_statement block_item block_item_list block_item_list_opt initializer M N // Expression type non-terminals, statements included.
+%type <iValue> pointer  // Pointers are taken as integer type
+%type <types> type_specifier declaration_specifiers // Data Type types
+%type <decl> direct_declarator initializer_list init_declarator declarator function_prototype // Declaration non-terminals
+%type <declList> init_declarator_list // Non-terminals of Declaration list type
 
 %%
 
 
 primary_expression  : IDENTIFIER    {
                         $$ = new E();  // New expression
-                        $$->addr = $1;      // Store pointer in Symbol Table
-                        $$->exprType = "not_bool";   // Non bool expression
-                    }
-                    | constant      {
-                        $$ = new E();  // New expression
-                        $$->addr = $1;      // Store pointer in Symbol Table
+                        currentSymbolTable->lookup(*$1); // Get or store in Symbol Table
+                        $$->addr = (*$1);   // Store expression as identifier name
                     }
                     | LITERAL       {
                         $$ = new E();  // New expression
-                        $$->addr = symbolTable::gentemp(new symbolType("ptr"), $1); // Create new temp with type ptr and store value
-                        $$->addr->type->arrType = new symbolType("char");
+                        $$->addr = ".StrC"+to_string(strCount++);
+                        stringList.push_back(*($1));
                     }
+                    | constant { $$ = $1; }
                     | PARANTHESIS_OPEN expression PARANTHESIS_CLOSE { $$ = $2; } // Assignment
                     ;
 
 constant            : CONSTANT_INT  {
-                        $$ = symbolTable::gentemp(new symbolType("int"), convIntToStr($1)); // Create new temp with type int and store value
-                        emit("=", $$->name, $1);
+                        $$ = new E();   // New expression
+                        $$->addr = currentSymbolTable->gentemp(INT); // Make INT Data Type temporary in ST
+                        emit($$->addr, $1, ASSIGN); // Assign the const to the new temp
+                        symbolVal* val = new symbolVal($1);
+                        currentSymbolTable->lookup($$->addr)->intValue = val;   // Set initial value for constant
                     }
                     | CONSTANT_FLOAT{
-                        $$ = symbolTable::gentemp(new symbolType("float"), string($1));  // Create new temp with type double and store value
-                        emit("=", $$->name, string($1));
+                        $$ = new E();   // New expression
+                        $$->addr = currentSymbolTable->gentemp(FLOAT); // Make FLOAT Data Type temporary in ST
+                        emit($$->addr, $1, ASSIGN); // Assign the const to the new temp
+                        symbolVal* val = new symbolVal($1);
+                        currentSymbolTable->lookup($$->addr)->intValue = val;   // Set initial value for constant
                     }
                     | CONSTANT_CHAR {
-                        $$ = symbolTable::gentemp(new symbolType("char"), string($1));   // Create new temp with type char and store value
-                        emit("=", $$->name, string($1));
+                        $$ = new E();   // New expression
+                        $$->addr = currentSymbolTable->gentemp(CHAR); // Make INT Data Type temporary in ST
+                        emit($$->addr, $1, ASSIGN); // Assign the const to the new temp
+                        symbolVal* val = new symbolVal($1);
+                        currentSymbolTable->lookup($$->addr)->intValue = val;   // Set initial value for constant
                     }
                     ;
 
-postfix_expression  : primary_expression {
-                        $$ = new A();   // New Array
-                        $$->location = $1->addr;   // Store pointer in Symbol Table
-                        $$->type = $1->addr->type;  // Update type
-                        $$->addr = $$->location;   // Update location
-                    }
+postfix_expression  : primary_expression { $$ = $1; }
                     | postfix_expression SQ_BRACKET_OPEN expression SQ_BRACKET_CLOSE {
-                        $$ = new A();   // New Array
-                        $$->type = $1->type->arrType;   // Update type
-                        $$->location = $1->location;  // Copy the incoming symbol
-                        $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in location which will have the address of the array element
-                        $$->arrType = "arr"; // A type is array
+                        string st = "";
+                        if ($1->deRef == 0) {
+                            st = currentSymbolTable->gentemp(INT);
+                            emit(st, 0, ASSIGN);            // Set new temporary as  0
+                            $1->deRefName = new string(st);
+                        }
+                        string t = currentSymbolTable->gentemp(INT); // new temp
 
-                        if ($1->arrType == "arr") { // Array of array
-                            symbol* temp = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in temp
-                            int sz = sizeOfType($$->type);  // Get size of type of current
-                            emit("*", temp->name, $3->addr->name, convIntToStr(sz)); // temp = expression * sz
-                            emit("+", $$->addr->name, $1->addr->name, temp->name); // post = post1 + temp
-                        }
-                        else {
-                            int sz = sizeOfType($$->type);  // Get size of type of current
-                            emit("*", $$->addr->name, $3->addr->name, convIntToStr(sz)); // post = expression * sz
-                        }
+                        emit(t, $3->addr, "", ASSIGN);
+                        emit(t, t, "4", MULT);
+                        emit(st, t, "", ASSIGN); // st = expression*4
+                        $$ = $1;
                     }
-                    | postfix_expression PARANTHESIS_OPEN argument_expression_list_opt PARANTHESIS_CLOSE {
-                        $$ = new A();   // Make new array
-                        $$->location = symbolTable::gentemp($1->type); // Get return type
-                        emit("call", $$->location->name, $1->location->name, convIntToStr($3)); // call name param_count
+                    | postfix_expression PARANTHESIS_OPEN PARANTHESIS_CLOSE {   // No arguments
+                        // Make a new empty symbol table
+                        globalSymbolTable.lookup($1->addr)->nestedTable;
+                        emit($1->addr, "0", "", CALL);
+                    }
+                    | postfix_expression PARANTHESIS_OPEN argument_expression_list PARANTHESIS_CLOSE {
+                        symbolTable* funcTable = globalSymbolTable.lookup($1->addr)->nestedTable;
+                        list<P*> params = *($3);    // Parameters
+                        list<symbol*> paramsArray = funcTable->symbols; // Get formal parameters
+
+                        for(auto it: params) emit((*it)->addr, "", "", PARAM);  // Emit parameters
+
+                        DataType returnType = funcTable->lookup("RETVAL")->type.base;   // Return value type
+                        if (returnType == VOID) emit($1->addr, (int)params.size(), CALL) // Function call
+                        else {
+                            string returnVal = currentSymbolTable->gentemp(returnType);
+                            emit($1->addr, to_string(params.size()), retVal, CALL);     // Function call and value to be stored
+                            $$ = new E();
+                            $$->addr = returnVal;
+                        }
                     }
                     | postfix_expression PERIOD IDENTIFIER {}
                     | postfix_expression ARROW IDENTIFIER {}
                     | postfix_expression INCREMENT {
-                        $$ = new A();   // Make new array
-                        $$->location = symbolTable::gentemp($1->location->type);    // Make new temp with type of current
-                        emit("=", $$->location->name, $1->location->name);    // post = post1
-                        emit("+", $1->location->name, $1->location->name, "1");   // post1 = post1 + 1
+                        $$ = new E();
+                        symbolType t = currentSymbolTable->lookup($1->addr)->type;  // Get type
+                        if (t.base == ARRAY) {
+                            $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($1->addr)->type.inner);
+                            emit($$->addr, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                            string temp = currentSymbolTable->gentemp(t.inner);
+                            emit(temp, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                            emit($$->addr, temp, "", ASSIGN);
+                            emit(temp, temp, "1", ADD);
+                            emit($1->addr, temp, *($1->deRefName), ARR_IDX_RES);
+                        }
+                        else {
+                            $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($1->addr)->type.base);
+                            emit($$->addr, $1->addr, "", ASSIGN);   // Assign current expression current value
+                            emit($1->addr, $1->addr, "1", ADD);     // Increment current value
+                        }
                     }
                     | postfix_expression DECREMENT {
-                        $$ = new A();   // Make new array
-                        $$->location = symbolTable::gentemp($1->location->type);    // Make new temp with type of current
-                        emit("=", $$->location->name, $1->location->name);    // post = post1
-                        emit("-", $1->location->name, $1->location->name, "1");   // post1 = post1 - 1
+                        $$ = new E();
+                        symbolType t = currentSymbolTable->lookup($1->addr)->type;  // Get type
+                        if (t.base == ARRAY) {
+                            $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($1->addr)->type.inner);
+                            emit($$->addr, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                            string temp = currentSymbolTable->gentemp(t.inner);
+                            emit(temp, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                            emit($$->addr, temp, "", ASSIGN);
+                            emit(temp, temp, "1", SUB);
+                            emit($1->addr, temp, *($1->deRefName), ARR_IDX_RES);
+                        }
+                        else {
+                            $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($1->addr)->type.base);
+                            emit($$->addr, $1->addr, "", ASSIGN);   // Assign current expression current value
+                            emit($1->addr, $1->addr, "1", SUB);     // Decrement current value
+                        }
                     }
                     | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE CURLY_BRACKET_OPEN initializer_list CURLY_BRACKET_CLOSE {}
                     | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE CURLY_BRACKET_OPEN initializer_list COMMA CURLY_BRACKET_CLOSE {}
                     ;
 
-argument_expression_list_opt : argument_expression_list {$$ = $1;} // Copy the number of parameters
-                            | %empty {$$ = 0;}   // No parameters
-                            ;
-
 argument_expression_list    : assignment_expression {
-                                $$ = 1;
-                                emit("param", $1->addr->name);  // Emit param
+                                // Get argument
+                                P* arg = new P();
+                                arg->name = $1->addr;
+                                arg->type = currentSymbolTable->lookup($1->addr)->type;
+                                $$ = new vector<P*>(1, arg);    // Make a new vector and store argument
                             }
                             | argument_expression_list COMMA assignment_expression {
-                                $$ = $1 + 1;
-                                emit("param", $3->addr->name);  // Emit param
+                                // Get argument
+                                P* arg = new P();
+                                arg->name = $3->addr;
+                                arg->type = currentSymbolTable->lookup($3->addr)->type;
+                                //  Add to existing vector
+                                $$ = $1;
+                                $1->push_back(arg);
                             }
                             ;
 
 unary_expression    : postfix_expression { $$ = $1; } // Pass the expression
                     | INCREMENT unary_expression {
-                        emit("+", $2->location->name, $2->location->name, "1");   // unary1 = unary1 + 1
-                        $$ = $2;    // unary = unary1
+                        $$ = new E();
+                        symbolType t = currentSymbolTable->lookup($2->addr)->type;  // Get type
+                        if (t.type == ARRAY) {
+                            string temp = currentSymbolTable->gentemp(t.inner);
+                            emit(temp, $2-name, *($2->deRefName), ARR_IDX_ARG);
+                            emit(temp, temp, "1", ADD);
+                            emit($2->addr, temp, *($2->deRefName), ARR_IDX_RES);
+                        }
+                        else {
+                            emit($2->addr, $2->addr, "1", ADD);
+                        }
+                        $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($2->addr)->type.base);
+                        emit($$->addr, $2->addr, "", ASSIGN);   // Assign incremented value
                     }
                     | DECREMENT unary_expression {
-                        emit("-", $2->location->name, $2->location->name, "1");   // unary1 = unary1 - 1
-                        $$ = $2;
+                        $$ = new E();
+                        symbolType t = currentSymbolTable->lookup($2->addr)->type;  // Get type
+                        if (t.type == ARRAY) {
+                            string temp = currentSymbolTable->gentemp(t.inner);
+                            emit(temp, $2-name, *($2->deRefName), ARR_IDX_ARG);
+                            emit(temp, temp, "1", SUB);
+                            emit($2->addr, temp, *($2->deRefName), ARR_IDX_RES);
+                        }
+                        else {
+                            emit($2->addr, $2->addr, "1", SUB);
+                        }
+                        $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($2->addr)->type.base);
+                        emit($$->addr, $2->addr, "", ASSIGN);   // Assign decremented value
                     }
                     | unary_operator cast_expression {
-                        $$ = new A();
                         if ($1 == '&') {
-                            $$->location = symbolTable::gentemp(new symbolType("ptr")); // Create new temp with type ptr and store in addr
-                            $$->location->type->arrType = $2->location->type;
-                            emit("= &", $$->location->name, $2->location->name); // unary = &unary1
+                            $$ = new E();
+                            $$->addr = currentSymbolTable->gentemp(POINTER);    // Pointer type
+                            emit($$->addr, $2->addr, "", REFERENCE);    // Get address
                         }
                         else if ($1 == '*') {
-                            $$->arrType = "ptr"; // Pointer type
-                            $$->addr = symbolTable::gentemp($2->location->type->arrType); // Create new temp with type of current and store in location
-                            $$->location = $2->location;    // Copy the incoming symbol
-                            emit("= *", $$->addr->name, $2->location->name); // unary = *unary1
+                            $$ = new E();
+                            $$->addr = currentSymbolTable->gentemp(INT);    // Pointers are integer values
+                            $$->deRef = 1;  // Dereferenced
+                            $$->deRefName = new string($2->addr); // Dereferenced name
+                            emit($$->addr, $2->addr, "", DEREFERENCE);    // Get value
                         }
-                        else if ($1 == '+') $$ = $2;
                         else if ($1 == '-') {
-                            $$->location = symbolTable::gentemp(new symbolType($2->location->type->base)); // Create new temp with type of current and store in addr
-                            emit("= -", $$->location->name, $2->location->name); // unary = $1 unary1
-                        }
-                        else if ($1 == '~')  {
-                            $$->location = symbolTable::gentemp(new symbolType($2->location->type->base)); // Create new temp with type of current and store in addr
-                            emit("= ~", $$->location->name, $2->location->name); // unary = $1 unary1
+                            $$ = new E();
+                            $$->addr = currentSymbolTable->gentemp(INT);
+                            emit($$->addr, $2->addr, "", U_MINUS);    // Get negative value
                         }
                         else if ($1 == '!') {
-                            $$->location = symbolTable::gentemp(new symbolType($2->location->type->base)); // Create new temp with type of current and store in addr
-                            emit("= !", $$->location->name, $2->location->name); // unary = $1 unary1
+                            $$ = new E();
+                            $$->addr = currentSymbolTable->gentemp(INT);
+                            int temp = nextinstr+2;
+                            emit(to_string(temp), $2->addr, "0", GOTO_EQ);
+                            temp = nextinstr+3;
+                            emit(to_string(temp), "", "", GOTO);
+                            emit($$->addr, "1", "", ASSIGN);
+                            temp = nextinstr+2;
+                            emit(to_string(temp), "", "", GOTO);
+                            emit($$->addr, "0", "", ASSIGN);
                         }
+                        // Bit operator ~ ignored
                     }
                     | SIZEOF unary_expression {}
                     | SIZEOF PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE {}
@@ -209,243 +279,389 @@ unary_operator      : AMPERSAND {$$ = '&';}
                     ;
 
 cast_expression     : unary_expression {$$ =  $1;} 
-                    | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE cast_expression {
-                        $$ = new A();
-                        $$->location = convType($4->location, data_type);
-                    }
+                    | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE cast_expression {}
                     ;
 
 multiplicative_expression : cast_expression {
-                            $$ = new E(); // new expression
-                            if ($1->arrType == "arr") {
-                                $$->addr = symbolTable::gentemp($1->addr->type); // Create new temp with type of current and store in addr
-                                emit("=[]", $$->addr->name, $1->location->name, $1->addr->name); // multexpr = castexpr [ castexpr->Array->name ]
-                            }
-                            else if($1->arrType == "ptr") {
-                                $$->addr = $1->addr; // Copy the incoming symbol
-                            }
-                            else $$->addr = $1->location; // Copy the incoming symbol
+                                symbolType temp = currentSymbolTable->lookup($1->addr)->type;
+                                if (temp.base == ARRAY) {
+                                    string t = currentSymbolTable->gentemp(temp.inner);
+                                    if ($1->deRefName != NULL) {
+                                        emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                                        $1->addr = t;
+                                        $1->type = temp.inner;
+                                    }
+                                }
+                                $$ = $1;
                           }
                           | multiplicative_expression ASTERISK cast_expression {
-                            if (typecheck($1->addr, $3->location)) {
-                                $$ = new E();
-                                $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
-                                emit("*", $$->addr->name, $1->addr->name, $3->location->name); // multexpr = multexpr1 * castexpr
+                            $$ = new E();
+                            // Get operands
+                            symbol* a = currentSymbolTable->lookup($1->addr);
+                            symbol* b = currentSymbolTable->lookup($3->addr);
+                            // ARRAY case
+                            if (b->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(b->type.inner);
+                                emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                                $3->addr = t;
+                                $3->type = b->type.inner;
                             }
-                            else {
-                                yyerror("Type mismatch");
+                            if (a->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(a->type.inner);
+                                emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                                $1->addr = t;
+                                $1->type = a->type.inner;
                             }
+
+                            // assign to max datatype
+                            DataType dt = max(a->type.base, b->type.base);
+                            $$->addr = currentSymbolTable->gentemp(dt); // Create new temp with type int and store in addr
+                            emit($$->addr, $1->addr, $3->addr, MULT); // multexpr = multexpr1 * castexpr
                           }
                           | multiplicative_expression SLASH cast_expression {
-                            if (typecheck($1->addr, $3->location)) {
-                                $$ = new E();
-                                $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
-                                emit("/", $$->addr->name, $1->addr->name, $3->location->name); // multexpr = multexpr1 / castexpr
+                            $$ = new E();
+                            // Get operands
+                            symbol* a = currentSymbolTable->lookup($1->addr);
+                            symbol* b = currentSymbolTable->lookup($3->addr);
+                            // ARRAY case
+                            if (b->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(b->type.inner);
+                                emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                                $3->addr = t;
+                                $3->type = b->type.inner;
                             }
-                            else {
-                                yyerror("Type mismatch");
+                            if (a->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(a->type.inner);
+                                emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                                $1->addr = t;
+                                $1->type = a->type.inner;
                             }
+
+                            // assign to max datatype
+                            DataType dt = max(a->type.base, b->type.base);
+                            $$->addr = currentSymbolTable->gentemp(dt); // Create new temp with type int and store in addr
+                            emit($$->addr, $1->addr, $3->addr, DIV); // multexpr = multexpr1 / castexpr
                           }
                           | multiplicative_expression PERCENT cast_expression {
-                            if (typecheck($1->addr, $3->location)) {
-                                $$ = new E();
-                                $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
-                                emit("%", $$->addr->name, $1->addr->name, $3->location->name); // multexpr = multexpr1 % castexpr
+                            $$ = new E();
+                            // Get operands
+                            symbol* a = currentSymbolTable->lookup($1->addr);
+                            symbol* b = currentSymbolTable->lookup($3->addr);
+                            // ARRAY case
+                            if (b->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(b->type.inner);
+                                emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                                $3->addr = t;
+                                $3->type = b->type.inner;
                             }
-                            else {
-                                yyerror("Type mismatch");
+                            if (a->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(a->type.inner);
+                                emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                                $1->addr = t;
+                                $1->type = a->type.inner;
                             }
+
+                            // assign to max datatype
+                            DataType dt = max(a->type.base, b->type.base);
+                            $$->addr = currentSymbolTable->gentemp(dt); // Create new temp with type int and store in addr
+                            emit($$->addr, $1->addr, $3->addr, MOD); // multexpr = multexpr1 % castexpr
                           }
                           ;
 
 additive_expression : multiplicative_expression { $$ = $1; } // Pass 
                     | additive_expression PLUS multiplicative_expression {
-                        if (typecheck($1->addr, $3->addr)) {
-                            $$ = new E();
-                            $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
-                            emit("+", $$->addr->name, $1->addr->name, $3->addr->name); // addexpr = addexpr1 + multexpr
+                        $$ = new E();
+                        // Get operands
+                        symbol* a = currentSymbolTable->lookup($1->addr);
+                        symbol* b = currentSymbolTable->lookup($3->addr);
+                        // ARRAY case
+                        if (b->type.base == ARRAY) {
+                            string t = currentSymbolTable->gentemp(b->type.inner);
+                            emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                            $3->addr = t;
+                            $3->type = b->type.inner;
                         }
-                        else {
-                            yyerror("Type mismatch");
+                        if (a->type.base == ARRAY) {
+                            string t = currentSymbolTable->gentemp(a->type.inner);
+                            emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                            $1->addr = t;
+                            $1->type = a->type.inner;
                         }
+
+                        // assign to max datatype
+                        DataType dt = max(a->type.base, b->type.base);
+                        $$->addr = currentSymbolTable->gentemp(dt); // Create new temp with type int and store in addr
+                        emit($$->addr, $1->addr, $3->addr, ADD); // addexpr = addexpr1 + multexpr
                     }
                     | additive_expression MINUS multiplicative_expression {
-                        if (typecheck($1->addr, $3->addr)) {
-                            $$ = new E();
-                            $$->addr = symbolTable::gentemp(new symbolType($1->addr->type->base)); // Create new temp with type int and store in addr
-                            emit("-", $$->addr->name, $1->addr->name, $3->addr->name); // addexpr = addexpr1 - multexpr
+                        $$ = new E();
+                        // Get operands
+                        symbol* a = currentSymbolTable->lookup($1->addr);
+                        symbol* b = currentSymbolTable->lookup($3->addr);
+                        // ARRAY case
+                        if (b->type.base == ARRAY) {
+                            string t = currentSymbolTable->gentemp(b->type.inner);
+                            emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                            $3->addr = t;
+                            $3->type = b->type.inner;
                         }
-                        else {
-                            yyerror("Type mismatch");
+                        if (a->type.base == ARRAY) {
+                            string t = currentSymbolTable->gentemp(a->type.inner);
+                            emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                            $1->addr = t;
+                            $1->type = a->type.inner;
                         }
+
+                        // assign to max datatype
+                        DataType dt = max(a->type.base, b->type.base);
+                        $$->addr = currentSymbolTable->gentemp(dt); // Create new temp with type int and store in addr
+                        emit($$->addr, $1->addr, $3->addr, SUB); // addexpr = addexpr1 - multexpr
                     }
                     ;
 
 shift_expression    : additive_expression {$$ = $1;} // Pass
-                    | shift_expression LEFT_SHIFT additive_expression {
-                        if ($3->addr->type->base == "int") {
-                            $$ = new E();
-                            $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
-                            emit("<<", $$->addr->name, $1->addr->name, $3->addr->name); // shiftexpr = shiftexpr1 << addexpr
-                        }
-                        else {
-                            yyerror("Type mismatch");
-                        }
-                    }
-                    | shift_expression RIGHT_SHIFT additive_expression {
-                        if ($3->addr->type->base == "int") {
-                            $$ = new E();
-                            $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
-                            emit(">>", $$->addr->name, $1->addr->name, $3->addr->name); // shiftexpr = shiftexpr1 >> addexpr
-                        }
-                        else {
-                            yyerror("Type mismatch");
-                        }
-                    }
+                    // Shift operations skipped
+                    | shift_expression LEFT_SHIFT additive_expression {}
+                    | shift_expression RIGHT_SHIFT additive_expression {}
                     ;
 
 relational_expression   : shift_expression { $$ = $1; }
                         | relational_expression LESS_THAN shift_expression {
-                            if (typecheck($1->addr, $3->addr)) {
-                                $$ = new E();
-                                $$->exprType = "bool";   // Boolean type
-                                $$->trueList = makelist(nextinstr()); // Make list of next instruction
-                                $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
-                                emit("<", "", $1->addr->name, $3->addr->name); // if relexpr < shiftexpr
-                                emit("goto", ""); // goto
+                            $$ = new E();
+                            // Get operands
+                            symbol* a = currentSymbolTable->lookup($1->addr);
+                            symbol* b = currentSymbolTable->lookup($3->addr);
+                            // ARRAY case
+                            if (b->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(b->type.inner);
+                                emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                                $3->addr = t;
+                                $3->type = b->type.inner;
                             }
-                            else {
-                                yyerror("Type mismatch");
+                            if (a->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(a->type.inner);
+                                emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                                $1->addr = t;
+                                $1->type = a->type.inner;
                             }
+                            $$->addr = currentSymbolTable->gentemp(); // Create new temp
+                            $$->type = BOOL;
+                            emit($$->addr, "1", "", ASSIGN);
+                            $$->trueList = makelist(nextinstr); // Make list of next instruction
+                            emit("", $1->addr, $3->addr, GOTO_LT);  // if relexpr < shiftexpr goto ..
+                            $$->falseList = makelist(nextinstr); // Make list of next instruction
+                            emit("", "", "", GOTO);  // goto ..
                         }
                         | relational_expression GREATER_THAN shift_expression {
-                            if (typecheck($1->addr, $3->addr)) {
-                                $$ = new E();
-                                $$->exprType = "bool";   // Boolean type
-                                $$->trueList = makelist(nextinstr()); // Make list of next instruction
-                                $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
-                                emit(">", "", $1->addr->name, $3->addr->name); // if relexpr > shiftexpr
-                                emit("goto", ""); // goto
+                            $$ = new E();
+                            // Get operands
+                            symbol* a = currentSymbolTable->lookup($1->addr);
+                            symbol* b = currentSymbolTable->lookup($3->addr);
+                            // ARRAY case
+                            if (b->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(b->type.inner);
+                                emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                                $3->addr = t;
+                                $3->type = b->type.inner;
                             }
-                            else {
-                                yyerror("Type mismatch");
+                            if (a->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(a->type.inner);
+                                emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                                $1->addr = t;
+                                $1->type = a->type.inner;
                             }
+                            $$->addr = currentSymbolTable->gentemp(); // Create new temp
+                            $$->type = BOOL;
+                            emit($$->addr, "1", "", ASSIGN);
+                            $$->trueList = makelist(nextinstr); // Make list of next instruction
+                            emit("", $1->addr, $3->addr, GOTO_GT);  // if relexpr > shiftexpr goto ..
+                            $$->falseList = makelist(nextinstr); // Make list of next instruction
+                            emit("", "", "", GOTO);  // goto ..
                         }
                         | relational_expression LESS_THAN_EQUAL shift_expression {
-                            if (typecheck($1->addr, $3->addr)) {
-                                $$ = new E();
-                                $$->exprType = "bool";   // Boolean type
-                                $$->trueList = makelist(nextinstr()); // Make list of next instruction
-                                $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
-                                emit("<=", "", $1->addr->name, $3->addr->name); // if relexpr <= shiftexpr
-                                emit("goto", ""); // goto
+                            $$ = new E();
+                            // Get operands
+                            symbol* a = currentSymbolTable->lookup($1->addr);
+                            symbol* b = currentSymbolTable->lookup($3->addr);
+                            // ARRAY case
+                            if (b->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(b->type.inner);
+                                emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                                $3->addr = t;
+                                $3->type = b->type.inner;
                             }
-                            else {
-                                yyerror("Type mismatch");
+                            if (a->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(a->type.inner);
+                                emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                                $1->addr = t;
+                                $1->type = a->type.inner;
                             }
+                            $$->addr = currentSymbolTable->gentemp(); // Create new temp
+                            $$->type = BOOL;
+                            emit($$->addr, "1", "", ASSIGN);
+                            $$->trueList = makelist(nextinstr); // Make list of next instruction
+                            emit("", $1->addr, $3->addr, GOTO_LE);  // if relexpr <= shiftexpr goto ..
+                            $$->falseList = makelist(nextinstr); // Make list of next instruction
+                            emit("", "", "", GOTO);  // goto ..
                         }
                         | relational_expression GREATER_THAN_EQUAL shift_expression {
-                            if (typecheck($1->addr, $3->addr)) {
-                                $$ = new E();
-                                $$->exprType = "bool";   // Boolean type
-                                $$->trueList = makelist(nextinstr()); // Make list of next instruction
-                                $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
-                                emit(">=", "", $1->addr->name, $3->addr->name); // if relexpr >= shiftexpr
-                                emit("goto", ""); // goto
+                            $$ = new E();
+                            // Get operands
+                            symbol* a = currentSymbolTable->lookup($1->addr);
+                            symbol* b = currentSymbolTable->lookup($3->addr);
+                            // ARRAY case
+                            if (b->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(b->type.inner);
+                                emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                                $3->addr = t;
+                                $3->type = b->type.inner;
                             }
-                            else {
-                                yyerror("Type mismatch");
+                            if (a->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(a->type.inner);
+                                emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                                $1->addr = t;
+                                $1->type = a->type.inner;
                             }
+                            $$->addr = currentSymbolTable->gentemp(); // Create new temp
+                            $$->type = BOOL;
+                            emit($$->addr, "1", "", ASSIGN);
+                            $$->trueList = makelist(nextinstr); // Make list of next instruction
+                            emit("", $1->addr, $3->addr, GOTO_GE);  // if relexpr >= shiftexpr goto ..
+                            $$->falseList = makelist(nextinstr); // Make list of next instruction
+                            emit("", "", "", GOTO);  // goto ..
                         }
                         ;
 
 equality_expression : relational_expression {$$ = $1;} // Pass
                     | equality_expression EQUAL relational_expression {
-                        if (typecheck($1->addr, $3->addr)) {
-                            convBoolToInt($1);
-                            convBoolToInt($3);
-                            $$ = new E();
-                            $$->exprType = "bool";   // Boolean type
-                            $$->trueList = makelist(nextinstr()); // Make list of next instruction
-                            $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
-                            emit("==", "", $1->addr->name, $3->addr->name); // if eqexpr == relexpr
-                            emit("goto", ""); // goto
+                        $$ = new E();
+                        // Get operands
+                        symbol* a = currentSymbolTable->lookup($1->addr);
+                        symbol* b = currentSymbolTable->lookup($3->addr);
+                        // ARRAY case
+                        if (b->type.base == ARRAY) {
+                            string t = currentSymbolTable->gentemp(b->type.inner);
+                            emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                            $3->addr = t;
+                            $3->type = b->type.inner;
                         }
-                        else {
-                            yyerror("Type mismatch");
+                        if (a->type.base == ARRAY) {
+                            string t = currentSymbolTable->gentemp(a->type.inner);
+                            emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                            $1->addr = t;
+                            $1->type = a->type.inner;
                         }
+                        $$->addr = currentSymbolTable->gentemp(); // Create new temp
+                        $$->type = BOOL;
+                        emit($$->addr, "1", "", ASSIGN);
+                        $$->trueList = makelist(nextinstr); // Make list of next instruction
+                        emit("", $1->addr, $3->addr, GOTO_EQ);  // if relexpr >= shiftexpr goto ..
+                        $$->falseList = makelist(nextinstr); // Make list of next instruction
+                        emit("", "", "", GOTO);  // goto ..
                     }
                     | equality_expression NOT_EQUAL relational_expression {
-                        if (typecheck($1->addr, $3->addr)) {
-                            convBoolToInt($1);
-                            convBoolToInt($3);
-                            $$ = new E();
-                            $$->exprType = "bool";   // Boolean type
-                            $$->trueList = makelist(nextinstr()); // Make list of next instruction
-                            $$->falseList = makelist(nextinstr()+1); // Make list of next instruction
-                            emit("!=", "", $1->addr->name, $3->addr->name); // if eqexpr != relexpr
-                            emit("goto", ""); // goto
+                        $$ = new E();
+                        // Get operands
+                        symbol* a = currentSymbolTable->lookup($1->addr);
+                        symbol* b = currentSymbolTable->lookup($3->addr);
+                        // ARRAY case
+                        if (b->type.base == ARRAY) {
+                            string t = currentSymbolTable->gentemp(b->type.inner);
+                            emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                            $3->addr = t;
+                            $3->type = b->type.inner;
                         }
-                        else {
-                            yyerror("Type mismatch");
+                        if (a->type.base == ARRAY) {
+                            string t = currentSymbolTable->gentemp(a->type.inner);
+                            emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                            $1->addr = t;
+                            $1->type = a->type.inner;
                         }
+                        $$->addr = currentSymbolTable->gentemp(); // Create new temp
+                        $$->type = BOOL;
+                        emit($$->addr, "1", "", ASSIGN);
+                        $$->trueList = makelist(nextinstr); // Make list of next instruction
+                        emit("", $1->addr, $3->addr, GOTO_NEQ);  // if relexpr >= shiftexpr goto ..
+                        $$->falseList = makelist(nextinstr); // Make list of next instruction
+                        emit("", "", "", GOTO);  // goto ..
                     }
                     ;
 
 AND_expression      : equality_expression {$$ = $1;} // Pass
                     | AND_expression AMPERSAND equality_expression {
-                        if (typecheck($1->addr, $3->addr)) {
-                            convBoolToInt($1);
-                            convBoolToInt($3);
-                            $$ = new E();
-                            $$->exprType = "not_bool"; // Not boolean
-                            $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
-                            emit("&", $$->addr->name, $1->addr->name, $3->addr->name); // andexpr = andexpr1 & eqexpr
+                        $$ = new E();
+                        // Get operands
+                        symbol* a = currentSymbolTable->lookup($1->addr);
+                        symbol* b = currentSymbolTable->lookup($3->addr);
+                        // ARRAY case
+                        if (b->type.base == ARRAY) {
+                            string t = currentSymbolTable->gentemp(b->type.inner);
+                            emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                            $3->addr = t;
+                            $3->type = b->type.inner;
                         }
-                        else {
-                            yyerror("Type mismatch");
+                        if (a->type.base == ARRAY) {
+                            string t = currentSymbolTable->gentemp(a->type.inner);
+                            emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                            $1->addr = t;
+                            $1->type = a->type.inner;
                         }
+                        $$->addr = currentSymbolTable->gentemp(); // Create new temp
+                        emit($$->addr, $1->addr, $3->addr, BW_AND); // andexpr = andexpr1 & eqexpr
                     }
                     ;
             
 exclusive_OR_expression : AND_expression {$$ = $1;} // Pass
                         | exclusive_OR_expression CARET AND_expression {
-                            if (typecheck($1->addr, $3->addr)) {
-                                convBoolToInt($1);
-                                convBoolToInt($3);
-                                $$ = new E();
-                                $$->exprType = "not_bool"; // Not boolean
-                                $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
-                                emit("^", $$->addr->name, $1->addr->name, $3->addr->name); // xorexpr = xorexpr1 ^ andexpr
+                            $$ = new E();
+                            // Get operands
+                            symbol* a = currentSymbolTable->lookup($1->addr);
+                            symbol* b = currentSymbolTable->lookup($3->addr);
+                            // ARRAY case
+                            if (b->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(b->type.inner);
+                                emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                                $3->addr = t;
+                                $3->type = b->type.inner;
                             }
-                            else {
-                                yyerror("Type mismatch");
+                            if (a->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(a->type.inner);
+                                emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                                $1->addr = t;
+                                $1->type = a->type.inner;
                             }
+                            $$->addr = currentSymbolTable->gentemp(); // Create new temp
+                            emit($$->addr, $1->addr, $3->addr, BW_XOR); // xorexpr = xorexpr1 ^ andexpr
                         }
                         ;
 
 inclusive_OR_expression : exclusive_OR_expression {$$ = $1;} // Pass
                         | inclusive_OR_expression PIPE exclusive_OR_expression {
-                            if (typecheck($1->addr, $3->addr)) {
-                                convBoolToInt($1);
-                                convBoolToInt($3);
-                                $$ = new E();
-                                $$->exprType = "not_bool"; // Not boolean
-                                $$->addr = symbolTable::gentemp(new symbolType("int")); // Create new temp with type int and store in addr
-                                emit("|", $$->addr->name, $1->addr->name, $3->addr->name); // orexpr = orexpr1 | xorexpr
+                            $$ = new E();
+                            // Get operands
+                            symbol* a = currentSymbolTable->lookup($1->addr);
+                            symbol* b = currentSymbolTable->lookup($3->addr);
+                            // ARRAY case
+                            if (b->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(b->type.inner);
+                                emit(t, $3->addr, *($3->deRefName), ARR_IDX_ARG);
+                                $3->addr = t;
+                                $3->type = b->type.inner;
                             }
-                            else {
-                                yyerror("Type mismatch");
+                            if (a->type.base == ARRAY) {
+                                string t = currentSymbolTable->gentemp(a->type.inner);
+                                emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
+                                $1->addr = t;
+                                $1->type = a->type.inner;
                             }
+                            $$->addr = currentSymbolTable->gentemp(); // Create new temp
+                            emit($$->addr, $1->addr, $3->addr, BW_OR); // orexpr = orexpr1 | xorexpr
                         }
                         ;
 
 logical_AND_expression  : inclusive_OR_expression {$$ = $1;} // Pass
                         | logical_AND_expression LOGICAL_AND M inclusive_OR_expression {    // M is augmented non-terminal
-                            convIntToBool($1);
-                            convIntToBool($4);
-                            $$ = new E();
-                            $$->exprType = "bool";   // Boolean type
+                            $$->type = BOOL;
                             backpatch($1->trueList, $3); // Backpatch
                             $$->trueList = $4->trueList; // Copy true list
                             $$->falseList = merge($1->falseList, $4->falseList); // Merge false lists
@@ -454,10 +670,7 @@ logical_AND_expression  : inclusive_OR_expression {$$ = $1;} // Pass
 
 logical_OR_expression   : logical_AND_expression {$$ = $1;} // Pass
                         | logical_OR_expression LOGICAL_OR M logical_AND_expression {   // M is augmented non-terminal
-                            convIntToBool($1);
-                            convIntToBool($4);
-                            $$ = new E();
-                            $$->exprType = "bool";   // Boolean type
+                            $$->type = BOOL;
                             backpatch($1->falseList, $3); // Backpatch
                             $$->falseList = $4->falseList; // Copy false list
                             $$->trueList = merge($1->trueList, $4->trueList); // Merge true lists
@@ -466,41 +679,49 @@ logical_OR_expression   : logical_AND_expression {$$ = $1;} // Pass
 
 conditional_expression  : logical_OR_expression {$$ = $1;} // Pass
                         | logical_OR_expression N QUESTION M expression N COLON M conditional_expression {  // M and N are augmented non-terminals
-                            $$->addr = symbolTable::gentemp($5->addr->type); // Create new temp with type of current and store in addr
-                            $$->addr->update($5->addr->type);
-                            emit("=", $$->addr->name, $9->addr->name); // condexpr = condexpr1
-                            list <int> templist1 = makelist(nextinstr());
-                            emit("goto", "");   // goto
-                            backpatch($6->nextList, nextinstr());   // For N2
-                            emit("=", $$->addr->name, $5->addr->name); // condexpr = expr
-                            list <int> templist2 = makelist(nextinstr());
-                            templist1 = merge(templist1, templist2);
-                            emit("goto", "");   // goto
-                            backpatch($2->nextList, nextinstr());   // For N1
-                            convIntToBool($1);
-                            backpatch($1->trueList, $4); // Backpatch to M1 when true
-                            backpatch($1->falseList, $8); // Backpatch to M2 when false
-                            backpatch(templist1, nextinstr());
+                            symbol* a = currentSymbolTable->lookup($5->addr);
+                            $$->addr = currentSymbolTable->gentemp(a->type.base); // Create new temp
+                            $$->type = a->type.base;
+                            emit($$->addr, $9->addr, "", ASSIGN);
+                            list<int> tempList = makelist(nextinstr); // Make list of next 
+                            emit("", "", "", GOTO);
+                            backpatch($6->nextList, nextinstr); // Backpatch N2
+                            emit($$->addr, $5->addr, "", ASSIGN);
+                            temp = merge(temp, makelist(nextinstr)); // Merge lists
+                            emit("", "", "", GOTO);
+                            backpatch($2->nextList, nextinstr); // Backpatch N1
+                            convIntToBool($1); // Convert to boolean
+                            backpatch($1->trueList, $4->instr); // Backpatch M1
+                            backpatch($1->falseList, $8->instr); // Backpatch M2
+                            backpatch($2->nextList, nextinstr); // Backpatch N1
                         }
                         ;
 
 /* AUGMENTED EMPTY NON-TERMINALS */
-M: %empty { $$ = nextinstr(); } // Has next instruction for backpatching
+M: %empty { 
+        $$ = new E();
+        $$->instr = nextinstr; // Has next instruction for backpatching
+    }
+    ;
 
-N: %empty { $$ = new S(); $$->nextList = makelist(nextinstr()); emit("goto", ""); } // Has next list for control flow
+N: %empty {
+        $$ = new E();
+        $$->nextList = makelist(nextinstr); // Has next list for control flow
+        emit("", "", "", GOTO); // Goto next instruction
+    }
+    ;
 
 assignment_expression   : conditional_expression {$$ = $1;} // Pass
                         | unary_expression assignment_operator assignment_expression {
-                            if ($1->arrType == "arr") { // convert array
-                                $3->addr = convType($3->addr, $1->type->base);
-                                emit("[]=", $1->location->name, $1->addr->name, $3->addr->name); // unary[unary1] = asgnexpr1
+                            // Get operands
+                            symbol* a = currentSymbolTable->lookup($1->addr);
+                            symbol* b = currentSymbolTable->lookup($3->addr);
+                            if ($1->deRef == 0) {
+                                if (a->type.base != ARRAY) emit($1->addr, $3->addr, "", ASSIGN);
+                                else emit($1->addr, $3->addr, *($1->deRefName), ARR_IDX_RES);
                             }
-                            else if ($1->arrType == "ptr") emit("*=", $1->location->name, $3->addr->name);  // Pointer type, *unary = asgnexpr1
-                            else {
-                                $3->addr = convType($3->addr, $1->location->type->base);
-                                emit("=", $1->location->name, $3->addr->name); // unary = asgnexpr1
-                            }
-                            $$ = $3;
+                            else emit(*($1->deRefName), $3->addr, "", L_DEREF);
+                            $$ = $1;
                         }
                         ;
 
@@ -526,7 +747,57 @@ constant_expression : conditional_expression {}
 
 
 
-declaration : declaration_specifiers init_declarator_list SEMICOLON {}
+declaration : declaration_specifiers init_declarator_list SEMICOLON {
+                DataType dt = $1;
+                int dtsize = (dt == INT)?(sizeof_int):((dt == CHAR)?(sizeof_char):((dt == FLOAT)?(sizeof_float):(-1)));
+                vector<D*> v = *($2);
+                for (auto it: decs) {
+                    D* cdec = *it;
+                    if (cdec->type == FUNCTION) {
+                        currentSymbolTable = &globalSymbolTable;
+                        emit(cdec->name, "", "", FUNC_END);
+                        symbol* a = currentSymbolTable->lookup(cdec->name); // Function entry in Global Symbol Table
+                        symbol* b = a->nestedTable->lookup("RETVAL", dt, cdec->pointers);
+                        a->size = 0;
+                        a->initValue = NULL;
+                        continue;
+                    }
+                    // Not a function
+                    symbol* c = currentSymbolTable->lookup(cdec->name, dt);
+                    c->nestedTable = NULL;
+                    if ((cdec->instrList).empty() && cdec->pointers = 0) {
+                        c->type.base = dt;
+                        c->size = dtsize;
+                        if (cdec->initValue != NULL) {
+                            string retvalue = cdec->initValue->addr;
+                            emit(c->name, retvalue, "", ASSIGN);    // Assign value of return
+                            c->initValue = currentSymbolTable->lookup(retvalue)->initValue;
+                        }
+                        else c->initValue = NULL;
+                    }
+                    else if(!((cdec->instrList).empty())) {
+                        // ARRAY
+                        c->type.base = ARRAY;
+                        c->type.inner = dt;
+                        c->type.dimList = cdec->instrList;
+                        vector<int> temp=  c->type.dimList;
+                        int tempSize = dtsize;
+                        for (int i = 0; i < temp.size(); i++) tempSize *= temp[i];
+                        currentSymbolTable->offset += tempSize;
+                        c->size = tempSize;
+                        currentSymbolTable->offset -= 4;
+                    }
+                    else if(cdec->pointers != 0) {
+                        // POINTER
+                        c->type.base = POINTER;
+                        c->type.inner = dt;
+                        c->type.pointers = cdec->pointers;
+                        currentSymbolTable->offset += (sizeof_pointer - dtsize);
+                        c->size = sizeof_pointer;
+                    }
+
+                }
+            }
             | declaration_specifiers SEMICOLON {}
             ;
 
@@ -540,14 +811,20 @@ declaration_specifiers  : storage_class_specifier declaration_specifiers {}
                         | function_specifier {}
                         ;
 
-init_declarator_list: init_declarator_list COMMA init_declarator {}
-                    | init_declarator {}
+init_declarator_list: init_declarator_list COMMA init_declarator { 
+                        $1->push_back($3);
+                        $$ = $1;
+                    }
+                    | init_declarator { $$ = new vector<D*>(1, $1); }
                     ;
 
-init_declarator : declarator {$$ = $1;} // Pass
+init_declarator : declarator {
+                    $$ = $1;
+                    $$->initValue = NULL; // No initial value given
+                }
                 | declarator ASSIGN initializer {
-                    if ($3->initValue != "") $1->initValue = $3->initValue;
-                    emit("=", $1->name, $3->name);
+                    $$ = $1;
+                    $$->initValue = $3; // Initial value given
                 }
                 ;
 
@@ -558,12 +835,12 @@ storage_class_specifier : EXTERN {}
                         ;
 
 // Void, char, int and float are the only valid data types to be provided.
-type_specifier  : VOID {data_type = "void";}
-                | CHAR {data_type = "char";}
+type_specifier  : VOID { $$ = VOID; }
+                | CHAR { $$ = CHAR; }
                 | SHORT {}
-                | INT {data_type = "int";}
+                | INT { $$ = INT; }
                 | LONG {}
-                | FLOAT {data_type = "float";}
+                | FLOAT { $$ = FLOAT; }
                 | DOUBLE {}
                 | SIGNED {}
                 | UNSIGNED {}
@@ -607,91 +884,83 @@ function_specifier  : INLINE {}
                     ;
 
 declarator  : pointer direct_declarator {
-                symbolType* t = $1;
-                while(t->arrType != NULL) t = t->arrType;   // Multidimensional array, go to last dimension
-                t->arrType = $2->type;  // Assign type
-                $$ = $2->update($1);    // Update
+                $$ = $2;
+                $$->pointers = $1;
             }
-            | direct_declarator {}
+            | direct_declarator {
+                // No pointer
+                $$ = $1;
+                $$->pointers = 0;
+            }
             ;
 
 direct_declarator   : IDENTIFIER {
-                        $$ = $1->update(new symbolType(data_type));   // Get data type of identifier
-                        currentSymbol = $1; // Update current symbol
+                        $$ = new D();
+                        $$->name = *($1);
                     }
-                    | PARANTHESIS_OPEN declarator PARANTHESIS_CLOSE { $$ = $2;} // Assignment
-                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list assignment_expression SQ_BRACKET_CLOSE {}
-                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list SQ_BRACKET_CLOSE {} 
-                    | direct_declarator SQ_BRACKET_OPEN assignment_expression SQ_BRACKET_CLOSE {
-                        symbolType* t = $1->type;
-                        symbolType* prev = NULL;
-                        while(t->base == "arr") {
-                            prev = t;
-                            t = t->arrType;
-                        }
-                        if (prev == NULL) {
-                            int temp = atoi($3->addr->initValue.c_str());   // Init value
-                            symbolType* tp = new symbolType("arr", $1->type, temp);   // Create new array type
-                            $$ = $1->update(tp);    // Update
-                        }
-                        else {
-                            int temp = atoi($3->addr->initValue.c_str());   // Init value
-                            prev->arrType = new symbolType("arr", t, temp);  // Create new array type
-                            $$ = $1->update($1->type);  // Update
-                        }
+                    | PARANTHESIS_OPEN declarator PARANTHESIS_CLOSE { $$ = $1; } 
+                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt SQ_BRACKET_CLOSE {
+                        $1->type = ARRAY;
+                        $1->inner = INT;
+                        // Array of ints
+
+                        $$ = $1;
+                        $$->instrList.push_back(0);
                     }
-                    | direct_declarator SQ_BRACKET_OPEN SQ_BRACKET_CLOSE {
-                        symbolType* t = $1->type;
-                        symbolType* prev = NULL;
-                        while(t->base == "arr") {
-                            prev = t;
-                            t = t->arrType;
-                        }
-                        if (prev == NULL) {
-                            symbolType* tp = new symbolType("arr", $1->type, 0);   // Create new array type
-                            $$ = $1->update(tp);    // Update
-                        }
-                        else {
-                            prev->arrType = new symbolType("arr", t, 0);  // Create new array type
-                            $$ = $1->update($1->type);  // Update
-                        }
+                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt assignment_expression SQ_BRACKET_CLOSE {
+                        $1->type = ARRAY;
+                        $1->inner  = INT;
+                        // Array of ints
+                        $$ = $1;
+                        $$->instrList.push_back(currentSymbolTable->lookup($4->addr)->initValue->i);
                     }
                     | direct_declarator SQ_BRACKET_OPEN STATIC type_qualifier_list assignment_expression SQ_BRACKET_CLOSE {}
-                    | direct_declarator SQ_BRACKET_OPEN STATIC assignment_expression SQ_BRACKET_CLOSE {}
                     | direct_declarator SQ_BRACKET_OPEN type_qualifier_list STATIC assignment_expression SQ_BRACKET_CLOSE {}
-                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list ASTERISK SQ_BRACKET_CLOSE {}
-                    | direct_declarator SQ_BRACKET_OPEN ASTERISK SQ_BRACKET_CLOSE {}
-                    | direct_declarator PARANTHESIS_OPEN change_table parameter_type_list PARANTHESIS_CLOSE {   // change_table non terminal is used to change the symbol table
-                        currentSymbolTable->name = $1->name; // Update name
-                        if ($1->type->base != "void") {
-                            symbol* s = currentSymbolTable->lookup("return");   // Find return symbol
-                            s->update($1->type);    // Update return type
+                    | direct_declarator SQ_BRACKET_OPEN type_qualifier_list_opt ASTERISK SQ_BRACKET_CLOSE {
+                        $1->type = POINTER;
+                        $1->inner = INT;
+                        $$ = $1;
+                    }
+                    | direct_declarator PARANTHESIS_OPEN parameter_type_list_opt PARANTHESIS_CLOSE {
+                        $$ = $1;
+                        $$->type = FUNCTION;
+                        symbol* fContent = currentSymbolTable->lookup($1->name, $1->type);
+                        symbolTable* fTable = new symbolTable();
+                        fContent->nestedTable = fTable;
+                        vector<P*> paramList = *($3);
+                        for (int i = 0; i < paramList.size(); i++) {
+                            param* curr = paramList[i];
+                            if (curr->type.base == ARRAY) {
+                                // ARRAY type parameter
+                                fTable->lookup(curr->name, curr->type.base);
+                                fTable->lookup(curr->name)->type.inner = INT;
+                                fTable->lookup(curr->name)->type.dimList.push_back(0);
+                            }
+                            else if (curr->type.base == POINTER) {
+                                fTable->lookup(curr->name, curr->type.base);
+                                fTable->lookup(curr->name)->type.inner = INT;
+                                fTable->lookup(curr->name)->type.dimList.push_back(0);
+                            }
+                            else fTable->lookup(curr->name, curr->type.base);
                         }
-                        $1->nestedTable = currentSymbolTable;    // Update nested table
-                        currentSymbolTable->parent = globalSymbolTable;   // Update parent
-                        switchTable(globalSymbolTable);  // Switch to global symbol table
-                        currentSymbol = $$; // Update current symbol
+                        currentSymbolTable = fTable;    // Switch to function symbol table
+                        emit($$->name, "", "", FUNC_BEG);
                     }
                     | direct_declarator PARANTHESIS_OPEN identifier_list PARANTHESIS_CLOSE {}
-                    | direct_declarator PARANTHESIS_OPEN change_table PARANTHESIS_CLOSE {
-                        currentSymbolTable->name = $1->name; // Update name
-                        if ($1->type->base != "void") {
-                            symbol* s = currentSymbolTable->lookup("return");   // Find return symbol
-                            s->update($1->type);    // Update return type
-                        }
-                        $1->nestedTable = currentSymbolTable;    // Update nested table
-                        currentSymbolTable->parent = globalSymbolTable;   // Update parent
-                        switchTable(globalSymbolTable);  // Switch to global symbol table
-                        currentSymbol = $$; // Update current symbol
-                    }
                     ;
+
+parameter_type_list_opt: parameter_type_list {}
+                        | %empty { $$ = new vector<P*>(); }
+                        ;
 
 type_qualifier_list_opt : type_qualifier_list {}
                         | %empty {}
                         ;
 
-pointer : ASTERISK type_qualifier_list_opt {$$ =  new symbolType("ptr");} // Create new pointer type
-        | ASTERISK type_qualifier_list_opt pointer {$$ = new symbolType("ptr", $3);} // Create new pointer type
+pointer : ASTERISK type_qualifier_list {}
+        | ASTERISK { $$ = 1;}
+        | ASTERISK type_qualifier_list pointer {}
+        | ASTERISK pointer { $$ = 1+$2; }
         ;
 
 type_qualifier_list : type_qualifier {}
@@ -702,11 +971,26 @@ parameter_type_list : parameter_list {}
                     | parameter_list COMMA ELLIPSIS {}
                     ;
 
-parameter_list  : parameter_declaration {}
-                | parameter_list COMMA parameter_declaration {}
+parameter_list  : parameter_declaration { $$ = new vector<P*> (1, $1); }
+                | parameter_list COMMA parameter_declaration {
+                    $1->push_back($3);
+                    $$ = $1;
+                }
                 ;
 
-parameter_declaration   : declaration_specifiers declarator {}
+parameter_declaration   : declaration_specifiers declarator {
+                            $$ = new P();
+                            $$->name = $2->name;
+                            if ($2->type == ARRAY) {
+                                $$->type.base = ARRAY;
+                                $$->type.inner = $1;
+                            }
+                            else if ($2->pc != 0) {
+                                $$->type.base = POINTER;
+                                $$->type.inner = $1;
+                            }
+                            else $$->type.base = $1;
+}
                         | declaration_specifiers {}
                         ;
 
@@ -717,7 +1001,7 @@ identifier_list : IDENTIFIER {}
 type_name   : specifier_qualifier_list {}
             ;
 
-initializer : assignment_expression {$$ = $1->addr;}
+initializer : assignment_expression {$$ = $1}
             | CURLY_BRACKET_OPEN initializer_list CURLY_BRACKET_CLOSE {}
             | CURLY_BRACKET_OPEN initializer_list COMMA CURLY_BRACKET_CLOSE {}
             ;
@@ -744,21 +1028,7 @@ designator  : SQ_BRACKET_OPEN constant_expression SQ_BRACKET_CLOSE {}
 
 statement   : labeled_statement {}
             | compound_statement { $$ = $1; }
-            | expression_statement {
-                $$ = new S();
-                $$->nextList = $1->nextList;
-            }
-            | selection_statement { $$ = $1; }
-            | iteration_statement { $$ = $1; }
-            | jump_statement { $$ = $1; }
-            ;
-
-// Added new non-terminal for loops
-loop_statement: labeled_statement {}
-            | expression_statement {
-                $$ = new S();
-                $$->nextList = $1->nextList;
-            }
+            | expression_statement { $$ = $1; }
             | selection_statement { $$ = $1; }
             | iteration_statement { $$ = $1; }
             | jump_statement { $$ = $1; }
@@ -769,24 +1039,24 @@ labeled_statement   : IDENTIFIER COLON statement {}
                     | DEFAULT COLON statement {}
                     ;
 
-compound_statement  : CURLY_BRACKET_OPEN X change_table block_item_list_opt CURLY_BRACKET_CLOSE {   // X and change_table are augmented non-terminals
-                        $$ = $4;
-                        switchTable(currentSymbolTable->parent);
+compound_statement  : CURLY_BRACKET_OPEN block_item_list CURLY_BRACKET_CLOSE {
+                        $$ = $2;
                     }
+                    | CURLY_BRACKET_OPEN CURLY_BRACKET_CLOSE {}
                     ;
 
-block_item_list_opt : block_item_list { $$ = $1; }
-                    | %empty { $$ = new S();}
-                    ;
-
-block_item_list : block_item {$$ = $1;}
-                | block_item_list M block_item {    // M is augmented non-terminal
-                    $$ = $3;
-                    backpatch($1->nextList, $2);    // Backpatch to jump to 2
+block_item_list : block_item {
+                    $$ = $1;
+                    backpatch($1->nextList, nextinstr);
+                }
+                | block_item_list M block_item {
+                    $$ = new E();
+                    backpatch($1->nextList, $2->instr);    // Backpatch to jump to 2
+                    $$->nextList = $3->nextList;    // Copy next list
                 }
                 ;
 
-block_item  : declaration { $$ = new S(); }
+block_item  : declaration { $$ = new E(); }
             | statement { $$ = $1; }
             ;
 
@@ -794,147 +1064,69 @@ expression_statement    : expression SEMICOLON { $$ = $1; }
                         | SEMICOLON { $$ = new E(); }
                         ;
 
-selection_statement : IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M statement N %prec THEN { // M, N and THEN augmented to help with control flow
-                        backpatch($4->nextList, nextinstr());   // Backpatch to next instruction
+selection_statement : IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M statement N { // M, N augmented to help with control flow
+                        backpatch($4->nextList, nextinstr);   // Backpatch to next instruction
                         convIntToBool($3);
-                        $$ = new S();
-                        backpatch($3->trueList, $6);    // Backpatch to M
-                        list<int> temp = merge($3->falseList, $7->nextList); // Merge false lists
-                        $$->nextList = merge($8->nextList, temp); // Merge false lists
+                        backpatch($3->trueList, $6->instr);    // Backpatch to M
+                        $$ = new E();
+                        $7->nextList = merge($8->nextList, $7->nextList); // Merge next lists
+                        $$->nextList = merge($3->falseList, $7->nextList); // Merge false lists
                     }
-                    | IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M statement N ELSE M statement {
-                        backpatch($4->nextList, nextinstr());   // Backpatch to next instruction
+                    | IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M statement N ELSE M statement N {
+                        backpatch($4->nextList, nextinstr);   // Backpatch to next instruction
                         convIntToBool($3);
-                        $$ = new S();
-                        backpatch($3->trueList, $6);    // Backpatch to M1
-                        backpatch($3->falseList, $10);   // Backpatch to M2
-                        list<int> temp = merge($7->nextList, $8->nextList); // Merge false lists
-                        $$->nextList = merge($11->nextList, temp); // Merge false lists
+                        backpatch($3->trueList, $6->instr);    // Backpatch to M1
+                        backpatch($3->falseList, $10->instr);   // Backpatch to M2
+                        // Merge next lists of statements and N
+                        $$->nextList = merge($7->nextList, $8->nextList);
+                        $$->nextList = merge($$->nextList, $11->nextList);
+                        $$->nextList = merge($$->nextList, $12->nextList);
                     }
                     | SWITCH PARANTHESIS_OPEN expression PARANTHESIS_CLOSE statement {}
                     ;
 
-iteration_statement : WHILE W PARANTHESIS_OPEN X change_table M expression PARANTHESIS_CLOSE M loop_statement { // W, X, M and change_table are augmented non-terminals
-                        $$ = new S(); // new statement
+iteration_statement : WHILE M PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M statement {
+                        $$ = new E();
+                        backpatch(makelist(nextinstr), $2->instr);
+                        emit("", "", "", GOTO);
+                        backpatch($5->nextList, nextinstr);
+                        convIntToBool($4);  // Convert to bool
+                        $$->nextList = $4->falseList;
+                        backpatch($4->trueList, $7->instr);
+                        backpatch($8->nexxxtList, $2->instr);
+                    }
+                    | DO M statement M WHILE PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE SEMICOLON {
+                        $$ = new E();
+                        backpatch($8->nextList, nextinstr); // Backpatching
                         convIntToBool($7);
-                        backpatch($10->nextList, $6);   // Backpatch to M1
-                        backpatch($7->trueList, $9);    // Backpatch to M2
+                        backpatch($7->trueList, $2->instr);    // Backpatch to M1
+                        backpatch($3->nextList, $4->instr);    // Backpatch to M2
                         $$->nextList = $7->falseList;  // Copy false list
-                        emit("goto", convIntToStr($6)); // goto
-                        blockName = "";
-                        switchTable(currentSymbolTable->parent);
                     }
-                    | WHILE W PARANTHESIS_OPEN X change_table M expression PARANTHESIS_CLOSE CURLY_BRACKET_OPEN M block_item_list_opt CURLY_BRACKET_CLOSE { // W, X, M and change_table are augmented non-terminals
-                        $$ = new S(); // new statement
-                        convIntToBool($7);
-                        backpatch($11->nextList, $6);   // Backpatch to M1
-                        backpatch($7->trueList, $10);    // Backpatch to M2
-                        $$->nextList = $7->falseList;  // Copy false list
-                        emit("goto", convIntToStr($6)); // goto
-                        blockName = "";
-                        switchTable(currentSymbolTable->parent);
-                    }
-                    | DO D M loop_statement M WHILE PARANTHESIS_OPEN expression PARANTHESIS_CLOSE SEMICOLON {   // D and M are augmented non-terminals
-                        $$ = new S();
-                        convIntToBool($8);
-                        backpatch($8->trueList, $3);    // Backpatch to D
-                        backpatch($4->nextList, $5);    // Backpatch to M
-                        $$->nextList = $8->falseList;  // Copy false list
-                        blockName = "";
-                    }
-                    | DO D CURLY_BRACKET_OPEN M block_item_list_opt CURLY_BRACKET_CLOSE M WHILE PARANTHESIS_OPEN expression PARANTHESIS_CLOSE SEMICOLON {  // D and M are augmented non-terminals
-                        $$ = new S();
-                        convIntToBool($10);
-                        backpatch($10->trueList, $4);    // Backpatch to M1
-                        backpatch($5->nextList, $7);    // Backpatch to M2
-                        $$->nextList = $10->falseList;  // Copy false list
-                        blockName = "";
-                    }
-                    | FOR F PARANTHESIS_OPEN X change_table declaration M expression_statement M expression N PARANTHESIS_CLOSE M loop_statement {  // F, X, M, N and change_table are augmented non-terminals
-                        $$ = new S();
-                        convIntToBool($8);
-                        backpatch($8->trueList, $13); // Backpatch to M3
-                        backpatch($11->nextList, $7); // Backpatch to M1
-                        backpatch($14->nextList, $9); // Backpatch to N
-                        emit("goto", convIntToStr($9)); // goto
-                        $$->nextList = $8->falseList;  // Copy false list
-                        blockName = "";
-                        switchTable(currentSymbolTable->parent);
-                    }
-                    | FOR F PARANTHESIS_OPEN X change_table expression_statement M expression_statement M expression N PARANTHESIS_CLOSE M loop_statement {  // F, X, M, N and change_table are augmented non-terminals
-                        $$ = new S();
-                        convIntToBool($8);
-                        backpatch($8->trueList, $13); // Backpatch to M3
-                        backpatch($11->nextList, $7); // Backpatch to M1
-                        backpatch($14->nextList, $9); // Backpatch to N
-                        emit("goto", convIntToStr($9)); // goto
-                        $$->nextList = $8->falseList;  // Copy false list
-                        blockName = "";
-                        switchTable(currentSymbolTable->parent);
-                    }
-                    | FOR F PARANTHESIS_OPEN X change_table declaration M expression_statement M expression N PARANTHESIS_CLOSE M CURLY_BRACKET_OPEN block_item_list_opt CURLY_BRACKET_CLOSE {  // F, X, M, N and change_table are augmented non-terminals
-                        $$ = new S();
-                        convIntToBool($8);
-                        backpatch($8->trueList, $13); // Backpatch to M3
-                        backpatch($11->nextList, $7); // Backpatch to M1
-                        backpatch($15->nextList, $9); // Backpatch to N
-                        emit("goto", convIntToStr($9)); // goto
-                        $$->nextList = $8->falseList;  // Copy false list
-                        blockName = "";
-                        switchTable(currentSymbolTable->parent);
-                    }
-                    | FOR F PARANTHESIS_OPEN X change_table expression_statement M expression_statement M expression N PARANTHESIS_CLOSE M CURLY_BRACKET_OPEN block_item_list_opt CURLY_BRACKET_CLOSE { // F, X, M, N and change_table are augmented non-terminals
-                        $$ = new S();
-                        convIntToBool($8);
-                        backpatch($8->trueList, $13); // Backpatch to M3
-                        backpatch($11->nextList, $7); // Backpatch to M1
-                        backpatch($15->nextList, $9); // Backpatch to N
-                        emit("goto", convIntToStr($9)); // goto
-                        $$->nextList = $8->falseList;  // Copy false list
-                        blockName = "";
-                        switchTable(currentSymbolTable->parent);
+                    | FOR PARANTHESIS_OPEN expression_statement M expression_statement N M expression N PARANTHESIS_CLOSE M statement {
+                        $$ = new E();
+                        $12->nextList = merge($12->nextList, makelist(nextinstr));
+                        emit("", "", "", GOTO);
+                        // Backpatching
+                        backpatch($12->nextList, $7->instr);
+                        backpatch($9->nextList, $4->instr);
+                        backpatch($6->nextList, nextinstr);
+                        convIntToBool($5);
+                        backpatch($5->trueList, $11->instr);
+                        $$->nextList = $5->falseList;   // Loop exit
                     }
                     ;
 
-// Augmented empty non-terminals
-F   : %empty { blockName = "FOR"; }
-    ;
-W   : %empty { blockName = "WHILE"; }
-    ;
-D   : %empty { blockName = "DO"; }
-    ;
-X   : %empty { 
-        string newSymbolTableName = currentSymbolTable->name + "." + blockName + "$" + to_string(SymbolTableCount++); // Name the new table
-        symbol* symbolFound = currentSymbolTable->lookup(newSymbolTableName); // Find the symbol
-        symbolFound->nestedTable = new symbolTable(newSymbolTableName); // Create new symbol table
-        symbolFound->name = newSymbolTableName; // Update name
-        symbolFound->nestedTable->parent = currentSymbolTable; // Update parent
-        symbolFound->type = new symbolType("block"); // Update type
-        currentSymbol = symbolFound; // Update current symbol
-    }
-    ;
-change_table    : %empty {
-                    // Switch to new symbol table, if it does not exist, create it
-                    if (currentSymbol->nestedTable != NULL) {
-                        switchTable(currentSymbol->nestedTable); // Switch to nested table
-                        emit("label", currentSymbolTable->name);
-                    }
-                    else {
-                        switchTable(new symbolTable(""));
-                    }
-                }
-                ;
-
 jump_statement  : GOTO IDENTIFIER SEMICOLON {}
-                | CONTINUE SEMICOLON { $$ = new S(); }
-                | BREAK SEMICOLON { $$ = new S(); }
-                | RETURN expression SEMICOLON {
-                    $$ = new S();
-                    emit("return", $2->addr->name); // return \$ 2->Array->name
+                | CONTINUE SEMICOLON {}
+                | BREAK SEMICOLON {}
+                | RETURN_ SEMICOLON {
+                    if (currentSymbolTable->lookup("RETVAL")->type.base == VOID) emit("", "", "", RETURN);
+                    $$->new E();
                 }
-                | RETURN SEMICOLON {
-                    $$ = new S();
-                    emit("return", ""); // return
+                | RETURN_ expression SEMICOLON {
+                    if (currentSymbolTable->lookup("RETVAL")->type.base == currentSymbolTable->lookup($2->addr)->type.base) emit($2->addr, "", "", RETURN);
+                    $$->new E();
                 }
                 ;
 
@@ -948,16 +1140,40 @@ external_declaration    : function_definition {}
                         | declaration {}
                         ;
 
-function_definition : declaration_specifiers declarator declaration_list_opt change_table CURLY_BRACKET_OPEN block_item_list_opt CURLY_BRACKET_CLOSE {
-                        currentSymbolTable->parent = globalSymbolTable;
-                        SymbolTableCount = 0;
-                        switchTable(globalSymbolTable);  // End of function, switch to global symbol table
+function_definition : declaration_specifiers declarator declaration_list compound_statement {}
+                    | function_prototype compound_statement {
+                        currentSymbolTable = &globalSymbolTable;    // go to global symbol table
+                        emit($1->name, "", "", FUNC_END);
                     }
                     ;
 
-declaration_list_opt    : declaration_list {}
-                        | %empty {}
-                        ;
+function_prototype: declaration_specifiers declarator {
+                        DataType dt = $1;
+                        int dtSize = -1;
+                        switch(dt) {
+                            case(CHAR) {
+                                dtSize = sizeof_char;
+                                break;
+                            }
+                            case(INT) {
+                                dtSize = sizeof_int;
+                                break;
+                            }
+                            case(FLOAT) {
+                                dtSize = sizeof_float;
+                                break;
+                            }
+                        }
+                        D* curr = $2;
+                        symbol* sym = globalSymbolTable.lookup(curr->name);
+                        if (curr->type == FUNCTION) {
+                            symbol* retval = sym->nestTable->lookup("RETVAL", dt, curr->pointers);
+                            sym->size = 0;
+                            sym->initValue = NULL;
+                        }
+                        $$ = $2;
+                    }
+                    ;
 
 declaration_list    : declaration {}
                     | declaration_list declaration {}
