@@ -98,7 +98,7 @@ void symbolTable::print(string tableName) {
     cout << endl;
 
     // For storing nested symbol tables
-    vector<pair<string, symbolTable*>> tableList;
+    vector<pair<string, symbolTable*> > tableList;
 
     // Print the symbols in the symbol table
     for(int i = 0; i < (int)symbols.size(); i++) {
@@ -113,7 +113,7 @@ void symbolTable::print(string tableName) {
         if(sym->nestedTable != NULL) {
             string nestedTableName = tableName + "." + sym->name;
             cout << nestedTableName << endl;
-            tableList.push_back({nestedTableName, sym->nestedTable});
+            tableList.push_back(make_pair(nestedTableName, sym->nestedTable));
         }
         else
             cout << "NULL" << endl;
@@ -124,7 +124,7 @@ void symbolTable::print(string tableName) {
     cout << endl << endl;
 
     // Recursively call the print function for the nested symbol tables
-    for(vector<pair<string, symbolTable*>>::iterator it = tableList.begin(); it != tableList.end(); it++) {
+    for(vector<pair<string, symbolTable*> >::iterator it = tableList.begin(); it != tableList.end(); it++) {
         pair<string, symbolTable*> p = (*it);
         p.second->print(p.first);
     }
