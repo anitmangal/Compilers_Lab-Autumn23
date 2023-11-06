@@ -31,6 +31,15 @@ class quadArray;    // List of Quads
 extern int yyparse();
 extern char* yytext;
 
+
+class symbolType {
+    public:
+    int pointers;
+    DataType base;
+    DataType inner;
+    vector<int> dimList;
+};
+
 class symbol {
     public:
     string name;    // Name of symbol
@@ -44,16 +53,13 @@ class symbol {
 };
 
 
-class symbolType {
-    public:
-    int pointers;
-    DataType base;
-    DataType inner;
-    vector<int> dimList;
-};
 
 class symbolVal {
     public:
+    int i;
+    char c;
+    float f;
+    void* p;
     // Possible values
     union {
         int i;
@@ -143,7 +149,7 @@ class D {
 
 /* GLOBAL FUNCTIONS */
 list<int> makelist(int i); // Make a new list with i as the only element, index of current quad
-list<int> merge(list<int> &p1, list <int> &p2); // Merge two lists, return merged list
+list<int> merge(list<int> p1, list <int> p2); // Merge two lists, return merged list
 void backpatch(list<int> p, int i); // Backpatch list p with i, update quad array
 bool typecheck(symbolType* t1, symbolType* t2); // Check if types t1 and t2 are compatible (called by typecheck(symbol, symbol) to check types of symbols and compatible types)
 void convType(E* arg, E* result, DataType target); // Convert type of arg to target type and store in result
@@ -152,7 +158,7 @@ void convType(string t, DataType target, string f, DataType source); // Convert 
 /* HELPER FUNCTIONS */
 string typeCheck(symbolType t); // Return string representation of type t
 void convIntToBool(E* e); // Convert int to bool
-int sizeOfType(symbolType* t); // Return size of type t
+int sizeOfType(DataType t); // Return size of type t
 string getInitValue(symbol* sym); // Return initial value of symbol sym
 DataType max(DataType t1, DataType t2); // Return max of t1 and t2
 #endif
