@@ -14,12 +14,12 @@
 using namespace std;
 
 // External variables
-extern symbolTable globalST;
-extern symbolTable* ST;
-extern quadArray quadList;
+extern symbolTable globalSymbolTable;
+extern symbolTable* currentSymbolTable;
+extern quadArray quadTable;
 
 // Declare global variables
-vector<string> stringConsts;
+vector<string> stringList;
 map<int, string> labels;
 stack<pair<string, int> > parameters;
 int labelCount = 0;
@@ -29,7 +29,7 @@ string asmFileName;
 
 // Prints the global information to the assembly file
 void printGlobal(ofstream& sfile) {
-    for(vector<symbol*>::iterator it = globalST.symbols.begin(); it != globalST.symbols.end(); it++) {
+    for(vector<symbol*>::iterator it = globalSymbolTable.symbols.begin(); it != globalSymbolTable.symbols.end(); it++) {
         symbol* sym = *it;
         if(sym->type.base == CHAR && sym->name[0] != 't') {
             if(sym->initValue != NULL) {
@@ -63,7 +63,7 @@ void printGlobal(ofstream& sfile) {
 void printStrings(ofstream& sfile) {
     sfile << ".section\t.rodata" << endl;
     int i = 0;
-    for(vector<string>::iterator it = stringConsts.begin(); it != stringConsts.end(); it++) {
+    for(vector<string>::iterator it = stringList.begin(); it != stringList.end(); it++) {
         sfile << ".LC" << i++ << ":" << endl;
         sfile << "\t.string " << *it << endl;
     }
@@ -72,7 +72,7 @@ void printStrings(ofstream& sfile) {
 // Generates labels for different targets of goto statements
 void setLabels() {
     int i = 0;
-    for(vector<quad>::iterator it = quadList.array.begin(); it != quadList.array.end(); it++) {
+    for(vector<quad>::iterator it = quadTable.array.begin(); it != quadTable.array.end(); it++) {
         if(it->op == GOTO || (it->op >= GOTO_EQ && it->op <= IF_FALSE_GOTO)) {
             int target = atoi((it->result.c_str()));
             if(!labels.count(target)) {
@@ -104,14 +104,14 @@ void quadCode(quad q, ofstream& sfile) {
     string toPrint1 = "", toPrint2 = "", toPrintRes = "";
     int off1 = 0, off2 = 0, offRes = 0;
 
-    symbol* loc1 = ST->lookup(q.arguement1);
-    symbol* loc2 = ST->lookup(q.arguement2);
-    symbol* loc3 = ST->lookup(q.result);
-    symbol* glb1 = globalST.searchGlobal(q.arguement1);
-    symbol* glb2 = globalST.searchGlobal(q.arguement2);
-    symbol* glb3 = globalST.searchGlobal(q.result);
+    symbol* loc1 = currentSymbolTable->lookup(q.arguement1);
+    symbol* loc2 = currentSymbolTable->lookup(q.arguement2);
+    symbol* loc3 = currentSymbolTable->lookup(q.result);
+    symbol* glb1 = globalSymbolTable.searchGlobal(q.arguement1);
+    symbol* glb2 = globalSymbolTable.searchGlobal(q.arguement2);
+    symbol* glb3 = globalSymbolTable.searchGlobal(q.result);
 
-    if(ST != &globalST) {
+    if(currentSymbolTable != &globalSymbolTable) {
         if(glb1 == NULL)
             off1 = loc1->offset;
         if(glb2 == NULL)
@@ -459,23 +459,23 @@ void generateTargetCode(ofstream& sfile) {
     symbol* currFunc = NULL;
     setLabels();
 
-    for(int i = 0; i < (int)quadList.array.size(); i++) {
+    for(int i = 0; i < (int)quadTable.array.size(); i++) {
         // Print the quad as a comment in the assembly file
-        sfile << "# " << quadList.array[i].print() << endl;
+        sfile << "# " << quadTable.array[i].print() << endl;
         if(labels.count(i))
             sfile << labels[i] << ":" << endl;
 
         // Necessary tasks for a function
-        if(quadList.array[i].op == FUNC_BEG) {
+        if(quadTable.array[i].op == FUNC_BEG) {
             i++;
-            if(quadList.array[i].op != FUNC_END)
+            if(quadTable.array[i].op != FUNC_END)
                 i--;
             else
                 continue;
-            currFunc = globalST.searchGlobal(quadList.array[i].result);
+            currFunc = globalSymbolTable.searchGlobal(quadTable.array[i].result);
             currFuncTable = currFunc->nestedTable;
             int takingParam = 1, memBind = 16;
-            ST = currFuncTable;
+            currentSymbolTable = currFuncTable;
             for(int j = 0; j < (int)currFuncTable->symbols.size(); j++) {
                 if(currFuncTable->symbols[j]->name == "RETVAL") {
                     takingParam = 0;
@@ -499,37 +499,37 @@ void generateTargetCode(ofstream& sfile) {
                 memBind = 0;
             else
                 memBind *= -1;
-            funcRunning = quadList.array[i].result;
+            funcRunning = quadTable.array[i].result;
             generatePrologue(memBind, sfile);
         }
 
         // Function epilogue (while leaving a function)
-        else if(quadList.array[i].op == FUNC_END) {
-            ST = &globalST;
+        else if(quadTable.array[i].op == FUNC_END) {
+            currentSymbolTable = &globalSymbolTable;
             funcRunning = "";
             sfile << "\tleave" << endl;
             sfile << "\tret" << endl;
-            sfile << "\t.size\t" << quadList.array[i].result << ", .-" << quadList.array[i].result << endl;
+            sfile << "\t.size\t" << quadTable.array[i].result << ", .-" << quadTable.array[i].result << endl;
         }
 
         if(funcRunning != "")
-            quadCode(quadList.array[i], sfile);
+            quadCode(quadTable.array[i], sfile);
     }
 }
 
 int main(int argc, char* argv[]) {
-    ST = &globalST;
+    currentSymbolTable = &globalSymbolTable;
     yyparse();
 
     asmFileName = "ass6_19CS10064_19CS30008_" + string(argv[argc - 1]) + ".s";
     ofstream sfile;
     sfile.open(asmFileName);
 
-    quadList.print();               // Print the three address quads
+    quadTable.print();               // Print the three address quads
 
-    ST->print("ST.global");         // Print the symbol tables
+    currentSymbolTable->print("currentSymbolTable.global");         // Print the symbol tables
 
-    ST = &globalST;
+    currentSymbolTable = &globalSymbolTable;
 
     generateTargetCode(sfile);      // Generate the target assembly code
 

@@ -268,7 +268,7 @@ list<int> makelist(int i) {
 }
 
 // Implementation of the merge function
-list<int> merge(list<int> &list1, list<int> &list2) {
+list<int> merge(list<int> list1, list<int> list2) {
     list1.merge(list2);
     return list1;
 }
@@ -367,7 +367,7 @@ string typeCheck(symbolType t) {
 }
 
 // Implementation of getinitValue function
-string getinitValue(symbol* sym) {
+string getInitValue(symbol* sym) {
     if (sym->initValue != NULL) {
         if(sym->type.base == INT) return to_string(sym->initValue->vals.i);
         else if(sym->type.base == CHAR) return to_string(sym->initValue->vals.c);
@@ -375,4 +375,10 @@ string getinitValue(symbol* sym) {
         else return "-";
     }
     else return "-";
+}
+
+// Implementation of max function
+DataType max(DataType t1, DataType t2) {
+    if (t1 > t2) return t1;
+    return t2;
 }

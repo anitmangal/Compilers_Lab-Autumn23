@@ -1,5 +1,6 @@
 %{
     #include <iostream>
+    #include "asgn6_21CS10005_21CS30031_translator.h"
     using namespace std;
     extern int yylex(); // in lex.yy.c : Lexical analyser
     extern int yylineno; // in lex.yy.c : Line number
@@ -10,7 +11,7 @@
     extern quadArray quadTable;    // in asgn5_21CS10005_21CS30031_translator.cxx : Quad array
     extern symbolTable globalSymbolTable;   // in asgn5_21CS10005_21CS30031_translator.cxx : Global symbol table
     extern symbolTable* currentSymbolTable; // in asgn5_21CS10005_21CS30031_translator.cxx : Current symbol table
-    extern list<string> stringList; // in asgn5_21CS10005_21CS30031_target_translator.cxx : List of string constants
+    extern vector<string> stringList; // in asgn5_21CS10005_21CS30031_target_translator.cxx : List of string constants
     int stringCount = 0; // Counts number of string constants encountered
 %}
 
@@ -31,10 +32,6 @@
     vector<D*> *declList; // Declaration list
     P* param;   // Parameter
     vector<P*> *paramList; // Parameter list
-}
-
-%code requires {
-    #include "asgn6_21CS10005_21CS30031_translator.h"
 }
 
 // TOKENS
