@@ -11,20 +11,23 @@ symbolTable* currentSymbolTable;
 symbolTable globalSymbolTable;
 
 // Constructors of SymbolVal
-symbolVal::symbolVal(int i) {
-    vals.i = i;
+symbolVal::symbolVal(int val) {
+    c = f = i = val;
+    p = NULL;
 }
 
-symbolVal::symbolVal(char c) {
-    vals.c = c;
+symbolVal::symbolVal(char val) {
+    c = f = i = val;
+    p = NULL;
 }
 
-symbolVal::symbolVal(float f) {
-    vals.f = f;
+symbolVal::symbolVal(float val) {
+    c = f = i = val;
+    p = NULL;
 }
 
 // Constructor of symbol
-symbol::symbol(): nestedTable(NULL) {}
+symbol::symbol(): nestedTable(NULL), initValue(NULL) {}
 
 // Implementations of constructors and functions for the symbolTable class
 symbolTable::symbolTable(): offset(0) {}
@@ -263,18 +266,21 @@ void emit(string result, char constant, opcode op) {
 
 // Implementation of the makelist function
 list<int> makelist(int i) {
+    cerr << "MAKELIST";
     list<int> l(1, i);
     return l;
 }
 
 // Implementation of the merge function
 list<int> merge(list<int> list1, list<int> list2) {
+    cerr << "MERGE";
     list1.merge(list2);
     return list1;
 }
 
 // Implementation of the backpatch function
 void backpatch(list<int> l, int address) {
+    cerr << "BACKPATCH";
     string str = to_string(address);
     for(list<int>::iterator it = l.begin(); it != l.end(); it++) {
         quadTable.array[*it].result = str;
@@ -369,9 +375,9 @@ string typeCheck(symbolType t) {
 // Implementation of getinitValue function
 string getInitValue(symbol* sym) {
     if (sym->initValue != NULL) {
-        if(sym->type.base == INT) return to_string(sym->initValue->vals.i);
-        else if(sym->type.base == CHAR) return to_string(sym->initValue->vals.c);
-        else if(sym->type.base == FLOAT) return to_string(sym->initValue->vals.f);
+        if(sym->type.base == INT) return to_string(sym->initValue->i);
+        else if(sym->type.base == CHAR) return to_string(sym->initValue->c);
+        else if(sym->type.base == FLOAT) return to_string(sym->initValue->f);
         else return "-";
     }
     else return "-";

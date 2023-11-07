@@ -129,7 +129,7 @@ postfix_expression  : primary_expression { $$ = $1; }
                         vector<P*> params = *($3);    // Parameters
                         vector<symbol*> paramsArray = funcTable->symbols; // Get formal parameters
 
-                        for(auto it: params) emit((*it).name, "", "", PARAM);  // Emit parameters
+                        for(int i = 0; i < params.size(); i++) emit(params[i]->name, "", "", PARAM);  // Emit parameters
 
                         DataType returnType = funcTable->lookup("RETVAL")->type.base;   // Return value type
                         if (returnType == VOID) emit($1->addr, (int)params.size(), CALL); // Function call
@@ -748,8 +748,8 @@ declaration : declaration_specifiers init_declarator_list SEMICOLON {
                 DataType dt = $1;
                 int dtsize = (dt == INT)?(sizeof_int):((dt == CHAR)?(sizeof_char):((dt == FLOAT)?(sizeof_float):(-1)));
                 vector<D*> v = *($2);
-                for (auto it: v) {
-                    D* cdec = it;
+                for (vector<D*>::iterator it = v.begin(); it != v.end(); it++) {
+                    D* cdec = *it;
                     if (cdec->type == FUNCTION) {
                         currentSymbolTable = &globalSymbolTable;
                         emit(cdec->name, "", "", FUNC_END);
@@ -1075,6 +1075,7 @@ selection_statement : IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M state
                         backpatch($3->trueList, $6->instr);    // Backpatch to M1
                         backpatch($3->falseList, $10->instr);   // Backpatch to M2
                         // Merge next lists of statements and N
+                        $$ = new E();
                         $$->nextList = merge($7->nextList, $8->nextList);
                         $$->nextList = merge($$->nextList, $11->nextList);
                         $$->nextList = merge($$->nextList, $12->nextList);
@@ -1102,8 +1103,8 @@ iteration_statement : WHILE M PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M 
                     }
                     | FOR PARANTHESIS_OPEN expression_statement M expression_statement N M expression N PARANTHESIS_CLOSE M statement {
                         $$ = new E();
-                        $12->nextList = merge($12->nextList, makelist(nextinstr));
                         emit("", "", "", GOTO);
+                        $12->nextList = merge($12->nextList, makelist(nextinstr-1));
                         // Backpatching
                         backpatch($12->nextList, $7->instr);
                         backpatch($9->nextList, $4->instr);

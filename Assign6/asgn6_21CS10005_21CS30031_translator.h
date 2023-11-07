@@ -60,13 +60,6 @@ class symbolVal {
     char c;
     float f;
     void* p;
-    // Possible values
-    union {
-        int i;
-        char c;
-        float f;
-        void* p;
-    } vals;
     // Constructors
     symbolVal(int);
     symbolVal(char);
