@@ -58,7 +58,7 @@
 %type <cValue> unary_operator // Unary operator non-terminals
 %type <param> parameter_declaration   // Number of parameters non-terminals
 %type <paramList> parameter_list parameter_type_list parameter_type_list_opt argument_expression_list // Parameter list types
-%type <expr> expression primary_expression constant multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression  postfix_expression unary_expression cast_expression expression_statement  statement labeled_statement compound_statement selection_statement iteration_statement jump_statement block_item block_item_list initializer M N // Expression type non-terminals, statements included.
+%type <expr> expression primary_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression AND_expression exclusive_OR_expression inclusive_OR_expression logical_AND_expression logical_OR_expression conditional_expression assignment_expression  postfix_expression unary_expression cast_expression expression_statement  statement labeled_statement compound_statement selection_statement iteration_statement jump_statement block_item block_item_list initializer M N // Expression type non-terminals, statements included.
 %type <iValue> pointer  // Pointers are taken as integer type
 %type <types> type_specifier declaration_specifiers // Data Type types
 %type <decl> direct_declarator initializer_list init_declarator declarator function_prototype // Declaration non-terminals
@@ -69,19 +69,16 @@
 
 primary_expression  : IDENTIFIER    {
                         $$ = new E();  // New expression
-                        currentSymbolTable->lookup(*$1); // Get or store in Symbol Table
-                        $$->addr = (*$1);   // Store expression as identifier name
+                        string s = *($1);
+                        currentSymbolTable->lookup(s); // Get or store in Symbol Table
+                        $$->addr = (s);   // Store expression as identifier name
                     }
                     | LITERAL       {
                         $$ = new E();  // New expression
                         $$->addr = ".LC"+to_string(stringCount++);
                         stringList.push_back(*($1));
                     }
-                    | constant { $$ = $1; }
-                    | PARANTHESIS_OPEN expression PARANTHESIS_CLOSE { $$ = $2; } // Assignment
-                    ;
-
-constant            : CONSTANT_INT  {
+                    | CONSTANT_INT  {
                         $$ = new E();   // New expression
                         $$->addr = currentSymbolTable->gentemp(INT); // Make INT Data Type temporary in ST
                         emit($$->addr, $1, ASSIGN); // Assign the const to the new temp
@@ -102,12 +99,14 @@ constant            : CONSTANT_INT  {
                         symbolVal* val = new symbolVal($1);
                         currentSymbolTable->lookup($$->addr)->initValue = val;   // Set initial value for constant
                     }
+                    | PARANTHESIS_OPEN expression PARANTHESIS_CLOSE { $$ = $2; } // Assignment
                     ;
 
-postfix_expression  : primary_expression { $$ = $1; }
+postfix_expression  : primary_expression {}
                     | postfix_expression SQ_BRACKET_OPEN expression SQ_BRACKET_CLOSE {
+                        symbolType to = currentSymbolTable->lookup($1->addr)->type;      // Get the type of the expression
                         string st = "";
-                        if ($1->deRef == 0) {
+                        if (!($1->deRef)) {
                             st = currentSymbolTable->gentemp(INT);
                             emit(st, 0, ASSIGN);            // Set new temporary as  0
                             $1->deRefName = new string(st);
@@ -121,7 +120,7 @@ postfix_expression  : primary_expression { $$ = $1; }
                     }
                     | postfix_expression PARANTHESIS_OPEN PARANTHESIS_CLOSE {   // No arguments
                         // Make a new empty symbol table
-                        globalSymbolTable.lookup($1->addr)->nestedTable;
+                        symbolTable* funcTable = globalSymbolTable.lookup($1->addr)->nestedTable;
                         emit($1->addr, "0", "", CALL);
                     }
                     | postfix_expression PARANTHESIS_OPEN argument_expression_list PARANTHESIS_CLOSE {
@@ -150,7 +149,6 @@ postfix_expression  : primary_expression { $$ = $1; }
                             emit($$->addr, $1->addr, *($1->deRefName), ARR_IDX_ARG);
                             string temp = currentSymbolTable->gentemp(t.inner);
                             emit(temp, $1->addr, *($1->deRefName), ARR_IDX_ARG);
-                            emit($$->addr, temp, "", ASSIGN);
                             emit(temp, temp, "1", ADD);
                             emit($1->addr, temp, *($1->deRefName), ARR_IDX_RES);
                         }
@@ -162,10 +160,10 @@ postfix_expression  : primary_expression { $$ = $1; }
                     }
                     | postfix_expression DECREMENT {
                         $$ = new E();
+                        $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($1->addr)->type.base);
                         symbolType t = currentSymbolTable->lookup($1->addr)->type;  // Get type
                         if (t.base == ARRAY) {
                             $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($1->addr)->type.inner);
-                            emit($$->addr, $1->addr, *($1->deRefName), ARR_IDX_ARG);
                             string temp = currentSymbolTable->gentemp(t.inner);
                             emit(temp, $1->addr, *($1->deRefName), ARR_IDX_ARG);
                             emit($$->addr, temp, "", ASSIGN);
@@ -200,7 +198,7 @@ argument_expression_list    : assignment_expression {
                             }
                             ;
 
-unary_expression    : postfix_expression { $$ = $1; } // Pass the expression
+unary_expression    : postfix_expression {} // Pass the expression
                     | INCREMENT unary_expression {
                         $$ = new E();
                         symbolType t = currentSymbolTable->lookup($2->addr)->type;  // Get type
@@ -209,9 +207,11 @@ unary_expression    : postfix_expression { $$ = $1; } // Pass the expression
                             emit(temp, $2->addr, *($2->deRefName), ARR_IDX_ARG);
                             emit(temp, temp, "1", ADD);
                             emit($2->addr, temp, *($2->deRefName), ARR_IDX_RES);
+                            $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($2->addr)->type.inner);
                         }
                         else {
                             emit($2->addr, $2->addr, "1", ADD);
+                            $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($2->addr)->type.base);
                         }
                         $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($2->addr)->type.base);
                         emit($$->addr, $2->addr, "", ASSIGN);   // Assign incremented value
@@ -224,11 +224,12 @@ unary_expression    : postfix_expression { $$ = $1; } // Pass the expression
                             emit(temp, $2->addr, *($2->deRefName), ARR_IDX_ARG);
                             emit(temp, temp, "1", SUB);
                             emit($2->addr, temp, *($2->deRefName), ARR_IDX_RES);
+                            $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($2->addr)->type.inner);
                         }
                         else {
                             emit($2->addr, $2->addr, "1", SUB);
+                            $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($2->addr)->type.base);
                         }
-                        $$->addr = currentSymbolTable->gentemp(currentSymbolTable->lookup($2->addr)->type.base);
                         emit($$->addr, $2->addr, "", ASSIGN);   // Assign decremented value
                     }
                     | unary_operator cast_expression {
@@ -275,11 +276,12 @@ unary_operator      : AMPERSAND {$$ = '&';}
                     | EXCLAMATION {$$ = '!';}
                     ;
 
-cast_expression     : unary_expression {$$ =  $1;} 
+cast_expression     : unary_expression {} 
                     | PARANTHESIS_OPEN type_name PARANTHESIS_CLOSE cast_expression {}
                     ;
 
 multiplicative_expression : cast_expression {
+                                $$ = new E();
                                 symbolType temp = currentSymbolTable->lookup($1->addr)->type;
                                 if (temp.base == ARRAY) {
                                     string t = currentSymbolTable->gentemp(temp.inner);
@@ -287,9 +289,11 @@ multiplicative_expression : cast_expression {
                                         emit(t, $1->addr, *($1->deRefName), ARR_IDX_ARG);
                                         $1->addr = t;
                                         $1->type = temp.inner;
+                                        $$ = $1;
                                     }
+                                    else $$ = $1;
                                 }
-                                $$ = $1;
+                                else $$ = $1;
                           }
                           | multiplicative_expression ASTERISK cast_expression {
                             $$ = new E();
@@ -365,7 +369,7 @@ multiplicative_expression : cast_expression {
                           }
                           ;
 
-additive_expression : multiplicative_expression { $$ = $1; } // Pass 
+additive_expression : multiplicative_expression {} // Pass 
                     | additive_expression PLUS multiplicative_expression {
                         $$ = new E();
                         // Get operands
@@ -416,13 +420,13 @@ additive_expression : multiplicative_expression { $$ = $1; } // Pass
                     }
                     ;
 
-shift_expression    : additive_expression {$$ = $1;} // Pass
+shift_expression    : additive_expression {} // Pass
                     // Shift operations skipped
                     | shift_expression LEFT_SHIFT additive_expression {}
                     | shift_expression RIGHT_SHIFT additive_expression {}
                     ;
 
-relational_expression   : shift_expression { $$ = $1; }
+relational_expression   : shift_expression {}
                         | relational_expression LESS_THAN shift_expression {
                             $$ = new E();
                             // Get operands
@@ -441,11 +445,13 @@ relational_expression   : shift_expression { $$ = $1; }
                                 $1->addr = t;
                                 $1->type = a->type.inner;
                             }
+                            $$ = new E();
                             $$->addr = currentSymbolTable->gentemp(); // Create new temp
                             $$->type = BOOL;
                             emit($$->addr, "1", "", ASSIGN);
                             $$->trueList = makelist(nextinstr); // Make list of next instruction
                             emit("", $1->addr, $3->addr, GOTO_LT);  // if relexpr < shiftexpr goto ..
+                            emit($$->addr, "0", "", ASSIGN);
                             $$->falseList = makelist(nextinstr); // Make list of next instruction
                             emit("", "", "", GOTO);  // goto ..
                         }
@@ -467,11 +473,13 @@ relational_expression   : shift_expression { $$ = $1; }
                                 $1->addr = t;
                                 $1->type = a->type.inner;
                             }
+                            $$ = new E();
                             $$->addr = currentSymbolTable->gentemp(); // Create new temp
                             $$->type = BOOL;
                             emit($$->addr, "1", "", ASSIGN);
                             $$->trueList = makelist(nextinstr); // Make list of next instruction
                             emit("", $1->addr, $3->addr, GOTO_GT);  // if relexpr > shiftexpr goto ..
+                            emit($$->addr, "0", "", ASSIGN);
                             $$->falseList = makelist(nextinstr); // Make list of next instruction
                             emit("", "", "", GOTO);  // goto ..
                         }
@@ -497,7 +505,8 @@ relational_expression   : shift_expression { $$ = $1; }
                             $$->type = BOOL;
                             emit($$->addr, "1", "", ASSIGN);
                             $$->trueList = makelist(nextinstr); // Make list of next instruction
-                            emit("", $1->addr, $3->addr, GOTO_LT);  // if relexpr <= shiftexpr goto ..
+                            emit("", $1->addr, $3->addr, GOTO_LTE);  // if relexpr <= shiftexpr goto ..
+                            emit($$->addr, "0", "", ASSIGN);
                             $$->falseList = makelist(nextinstr); // Make list of next instruction
                             emit("", "", "", GOTO);  // goto ..
                         }
@@ -519,17 +528,22 @@ relational_expression   : shift_expression { $$ = $1; }
                                 $1->addr = t;
                                 $1->type = a->type.inner;
                             }
+                            $$ = new E();
                             $$->addr = currentSymbolTable->gentemp(); // Create new temp
                             $$->type = BOOL;
                             emit($$->addr, "1", "", ASSIGN);
                             $$->trueList = makelist(nextinstr); // Make list of next instruction
                             emit("", $1->addr, $3->addr, GOTO_GTE);  // if relexpr >= shiftexpr goto ..
+                            emit($$->addr, "0", "", ASSIGN);
                             $$->falseList = makelist(nextinstr); // Make list of next instruction
                             emit("", "", "", GOTO);  // goto ..
                         }
                         ;
 
-equality_expression : relational_expression {$$ = $1;} // Pass
+equality_expression : relational_expression {
+                        $$ = new E();
+                        $$ = $1;
+                    } // Pass
                     | equality_expression EQUAL relational_expression {
                         $$ = new E();
                         // Get operands
@@ -548,11 +562,13 @@ equality_expression : relational_expression {$$ = $1;} // Pass
                             $1->addr = t;
                             $1->type = a->type.inner;
                         }
+                        $$ = new E();
                         $$->addr = currentSymbolTable->gentemp(); // Create new temp
                         $$->type = BOOL;
                         emit($$->addr, "1", "", ASSIGN);
                         $$->trueList = makelist(nextinstr); // Make list of next instruction
                         emit("", $1->addr, $3->addr, GOTO_EQ);  // if relexpr >= shiftexpr goto ..
+                        emit($$->addr, "0", "", ASSIGN);
                         $$->falseList = makelist(nextinstr); // Make list of next instruction
                         emit("", "", "", GOTO);  // goto ..
                     }
@@ -579,12 +595,13 @@ equality_expression : relational_expression {$$ = $1;} // Pass
                         emit($$->addr, "1", "", ASSIGN);
                         $$->trueList = makelist(nextinstr); // Make list of next instruction
                         emit("", $1->addr, $3->addr, GOTO_NEQ);  // if relexpr >= shiftexpr goto ..
+                        emit($$->addr, "0", "", ASSIGN);
                         $$->falseList = makelist(nextinstr); // Make list of next instruction
                         emit("", "", "", GOTO);  // goto ..
                     }
                     ;
 
-AND_expression      : equality_expression {$$ = $1;} // Pass
+AND_expression      : equality_expression {} // Pass
                     | AND_expression AMPERSAND equality_expression {
                         $$ = new E();
                         // Get operands
@@ -603,6 +620,7 @@ AND_expression      : equality_expression {$$ = $1;} // Pass
                             $1->addr = t;
                             $1->type = a->type.inner;
                         }
+                        $$ = new E();
                         $$->addr = currentSymbolTable->gentemp(); // Create new temp
                         emit($$->addr, $1->addr, $3->addr, BW_AND); // andexpr = andexpr1 & eqexpr
                     }
@@ -627,12 +645,16 @@ exclusive_OR_expression : AND_expression {$$ = $1;} // Pass
                                 $1->addr = t;
                                 $1->type = a->type.inner;
                             }
+                            $$ = new E();
                             $$->addr = currentSymbolTable->gentemp(); // Create new temp
                             emit($$->addr, $1->addr, $3->addr, BW_XOR); // xorexpr = xorexpr1 ^ andexpr
                         }
                         ;
 
-inclusive_OR_expression : exclusive_OR_expression {$$ = $1;} // Pass
+inclusive_OR_expression : exclusive_OR_expression {
+                            $$ = new E();
+                            $$ = $1;
+                        } // Pass
                         | inclusive_OR_expression PIPE exclusive_OR_expression {
                             $$ = new E();
                             // Get operands
@@ -651,6 +673,7 @@ inclusive_OR_expression : exclusive_OR_expression {$$ = $1;} // Pass
                                 $1->addr = t;
                                 $1->type = a->type.inner;
                             }
+                            $$ = new E();
                             $$->addr = currentSymbolTable->gentemp(); // Create new temp
                             emit($$->addr, $1->addr, $3->addr, BW_OR); // orexpr = orexpr1 | xorexpr
                         }
@@ -658,19 +681,19 @@ inclusive_OR_expression : exclusive_OR_expression {$$ = $1;} // Pass
 
 logical_AND_expression  : inclusive_OR_expression {$$ = $1;} // Pass
                         | logical_AND_expression LOGICAL_AND M inclusive_OR_expression {    // M is augmented non-terminal
-                            $$->type = BOOL;
                             backpatch($1->trueList, $3->instr); // Backpatch
-                            $$->trueList = $4->trueList; // Copy true list
                             $$->falseList = merge($1->falseList, $4->falseList); // Merge false lists
+                            $$->trueList = $4->trueList; // Copy true list
+                            $$->type = BOOL;
                         }
                         ;
 
 logical_OR_expression   : logical_AND_expression {$$ = $1;} // Pass
                         | logical_OR_expression LOGICAL_OR M logical_AND_expression {   // M is augmented non-terminal
-                            $$->type = BOOL;
                             backpatch($1->falseList, $3->instr); // Backpatch
-                            $$->falseList = $4->falseList; // Copy false list
                             $$->trueList = merge($1->trueList, $4->trueList); // Merge true lists
+                            $$->falseList = $4->falseList; // Copy false list
+                            $$->type = BOOL;
                         }
                         ;
 
@@ -708,7 +731,7 @@ N: %empty {
     }
     ;
 
-assignment_expression   : conditional_expression {$$ = $1;} // Pass
+assignment_expression   : conditional_expression {} // Pass
                         | unary_expression assignment_operator assignment_expression {
                             // Get operands
                             symbol* a = currentSymbolTable->lookup($1->addr);
@@ -746,7 +769,10 @@ constant_expression : conditional_expression {}
 
 declaration : declaration_specifiers init_declarator_list SEMICOLON {
                 DataType dt = $1;
-                int dtsize = (dt == INT)?(sizeof_int):((dt == CHAR)?(sizeof_char):((dt == FLOAT)?(sizeof_float):(-1)));
+                int dtsize = -1;
+                if (dt == INT) dtsize = sizeof_int;
+                else if (dt == CHAR) dtsize = sizeof_char;
+                else if (dt == FLOAT) dtsize = sizeof_float;
                 vector<D*> v = *($2);
                 for (vector<D*>::iterator it = v.begin(); it != v.end(); it++) {
                     D* cdec = *it;
@@ -772,7 +798,7 @@ declaration : declaration_specifiers init_declarator_list SEMICOLON {
                         }
                         else c->initValue = NULL;
                     }
-                    else if(!((cdec->instrList).empty())) {
+                    else if((cdec->instrList) != vector<int>()) {
                         // ARRAY
                         c->type.base = ARRAY;
                         c->type.inner = dt;
@@ -855,13 +881,10 @@ specifier_qualifier_list_opt    : specifier_qualifier_list {}
                                 | %empty {}
                                 ;
 
-enum_specifier  : ENUM identifier_opt CURLY_BRACKET_OPEN enumerator_list CURLY_BRACKET_CLOSE {}
-                | ENUM identifier_opt CURLY_BRACKET_OPEN enumerator_list COMMA CURLY_BRACKET_CLOSE {}
+enum_specifier  : ENUM CURLY_BRACKET_OPEN enumerator_list CURLY_BRACKET_CLOSE {}
+                | ENUM IDENTIFIER CURLY_BRACKET_OPEN enumerator_list CURLY_BRACKET_CLOSE {}
+                | ENUM IDENTIFIER CURLY_BRACKET_OPEN enumerator_list COMMA CURLY_BRACKET_CLOSE {}
                 | ENUM IDENTIFIER {}
-                ;
-
-identifier_opt  : IDENTIFIER {}
-                | %empty {}
                 ;
 
 enumerator_list : enumerator {}
@@ -947,7 +970,7 @@ direct_declarator   : IDENTIFIER {
                     ;
 
 parameter_type_list_opt: parameter_type_list {}
-                        | %empty { $$ = new vector<P*>(); }
+                        | %empty { $$ = new vector<P*>; }
                         ;
 
 type_qualifier_list_opt : type_qualifier_list {}
@@ -1024,11 +1047,11 @@ designator  : SQ_BRACKET_OPEN constant_expression SQ_BRACKET_CLOSE {}
 
 
 statement   : labeled_statement {}
-            | compound_statement { $$ = $1; }
-            | expression_statement { $$ = $1; }
-            | selection_statement { $$ = $1; }
-            | iteration_statement { $$ = $1; }
-            | jump_statement { $$ = $1; }
+            | compound_statement
+            | expression_statement
+            | selection_statement
+            | iteration_statement
+            | jump_statement
             ;
 
 labeled_statement   : IDENTIFIER COLON statement {}
@@ -1054,10 +1077,10 @@ block_item_list : block_item {
                 ;
 
 block_item  : declaration { $$ = new E(); }
-            | statement { $$ = $1; }
+            | statement
             ;
 
-expression_statement    : expression SEMICOLON { $$ = $1; }
+expression_statement    : expression SEMICOLON {}
                         | SEMICOLON { $$ = new E(); }
                         ;
 
@@ -1085,8 +1108,8 @@ selection_statement : IF PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M state
 
 iteration_statement : WHILE M PARANTHESIS_OPEN expression N PARANTHESIS_CLOSE M statement {
                         $$ = new E();
-                        backpatch(makelist(nextinstr), $2->instr);
                         emit("", "", "", GOTO);
+                        backpatch(makelist(nextinstr-1), $2->instr);
                         backpatch($5->nextList, nextinstr);
                         convIntToBool($4);  // Convert to bool
                         $$->nextList = $4->falseList;

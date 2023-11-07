@@ -266,21 +266,18 @@ void emit(string result, char constant, opcode op) {
 
 // Implementation of the makelist function
 list<int> makelist(int i) {
-    cerr << "MAKELIST";
     list<int> l(1, i);
     return l;
 }
 
 // Implementation of the merge function
 list<int> merge(list<int> list1, list<int> list2) {
-    cerr << "MERGE";
     list1.merge(list2);
     return list1;
 }
 
 // Implementation of the backpatch function
 void backpatch(list<int> l, int address) {
-    cerr << "BACKPATCH";
     string str = to_string(address);
     for(list<int>::iterator it = l.begin(); it != l.end(); it++) {
         quadTable.array[*it].result = str;

@@ -521,7 +521,7 @@ int main(int argc, char* argv[]) {
     currentSymbolTable = &globalSymbolTable;
     yyparse();
 
-    asmFileName = "ass6_19CS10064_19CS30008_" + string(argv[argc - 1]) + ".s";
+    asmFileName = "asgn6_21CS10005_21CS30031_" + string(argv[argc - 1]) + ".s";
     ofstream sfile;
     sfile.open(asmFileName);
 
