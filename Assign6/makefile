@@ -1,4 +1,4 @@
-BASE=asgn5_21CS10005_21CS30031
+BASE=asgn6_21CS10005_21CS30031
 
 tinyC: lex.yy.o $(BASE).tab.o $(BASE)_translator.o $(BASE)_target_translator.o
 	g++ lex.yy.o $(BASE).tab.o $(BASE)_translator.o $(BASE)_target_translator.o -o tinyC
