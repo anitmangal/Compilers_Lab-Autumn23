@@ -1,6 +1,5 @@
 %{
     #include <iostream>
-    #include "asgn5_21CS10005_21CS30031_translator.h"
     using namespace std;
     extern int yylex(); // in lex.yy.c : Lexical analyser
     extern int yylineno; // in lex.yy.c : Line number
@@ -35,7 +34,7 @@
 }
 
 %code requires {
-    #include "asgn5_21CS10005_21CS30031_translator.h"
+    #include "asgn6_21CS10005_21CS30031_translator.h"
 }
 
 // TOKENS

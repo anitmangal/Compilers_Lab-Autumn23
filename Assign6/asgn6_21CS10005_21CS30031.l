@@ -1,7 +1,7 @@
 /* Declarations */
 %{
-    #include "asgn5_21CS10005_21CS30031_translator.h"
-    #include "asgn5_21CS10005_21CS30031.tab.h"
+    #include "asgn6_21CS10005_21CS30031_translator.h"
+    #include "asgn6_21CS10005_21CS30031.tab.h"
 %}
 
 /* For bison to get line number */
