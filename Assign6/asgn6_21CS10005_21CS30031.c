@@ -1,6 +1,5 @@
 #include "myl.h"
-#define BUFF_LENGTH 100
-
+#define BUFF_LENGTH 40
 // Function to print a null-terminated string and return its length
 int printStr(char * s) {
     int char_cnt = 0;
@@ -32,7 +31,7 @@ int readInt(int *n) {
         :"=a"(len)
         :"S"(buff), "d"(BUFF_LENGTH)
     );
-    if (len <= 0) return ERR;
+    if (len < 0) return ERR;
 
     // Loop until newline is read.
     while (buff[ind] != '\n') {
@@ -53,7 +52,7 @@ int readInt(int *n) {
 
 // Function to print an int and return the number of characters printed.
 int printInt(int n) {
-    char buff[BUFF_LENGTH];          // Array to store digits in reversed form. int can have 10 digits at max.
+    char buff[10];          // Array to store digits in reversed form. int can have 10 digits at max.
     int ind = 0;            // Variable to store current index of array
     int numprint = 0;       // Variable to count number of characters printed
     char zero = '0';
